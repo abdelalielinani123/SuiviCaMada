@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Productivité &amp; CA Horaire — Mada</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#FAFBFC; --border:#E3E6EB;
+  --text:#101828; --text-2:#475467; --muted:#8A94A6;
+  --brand:#2554C7; --brand-ink:#1D4ED8; --brand-soft:#EAF1FD;
+  --cat-mail:#3B6FD4; --cat-in:#E28C2E; --cat-out:#8B5CF6;
+  --seq-1:#EAF1FD; --seq-2:#B7CDF7; --seq-3:#5D8CE8; --seq-4:#1D4ED8; --seq-5:#123A93;
+  --good:#16A34A; --warn:#D97706; --crit:#DC2626;
+  --shadow:0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
+  --radius:12px;
+}
+[data-theme="dark"]{
+  --bg:#0B0F19; --surface:#111826; --surface-2:#0E1420; --border:#232B3D;
+  --text:#F2F4F7; --text-2:#B4BCCB; --muted:#6B7690;
+  --brand:#5B8DEF; --brand-ink:#7AA2F7; --brand-soft:#16223B;
+  --cat-mail:#6C9BF2; --cat-in:#F0A94E; --cat-out:#B08CF5;
+  --seq-1:#16223B; --seq-2:#1F3562; --seq-3:#2E4F94; --seq-4:#5B8DEF; --seq-5:#A9C4FA;
+  --good:#3FBE6B; --warn:#F0A94E; --crit:#F0616B;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);transition:background .2s,color .2s;}
+header.top{display:flex;align-items:center;gap:14px;padding:14px 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;}
+header.top .brandmark{display:flex;align-items:center;gap:10px;}
+header.top .brandmark .dot{width:10px;height:10px;border-radius:50%;background:var(--brand);}
+header.top h1{font-size:16px;margin:0;font-weight:650;}
+header.top .badge{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--brand-ink);background:var(--brand-soft);padding:3px 9px;border-radius:20px;}
+header.top .spacer{flex:1;}
+header.top .meta{font-size:12px;color:var(--muted);}
+button.iconbtn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+button.iconbtn:hover{background:var(--surface-2);}
+nav.tabs{display:flex;gap:4px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;}
+nav.tabs button{border:none;background:none;padding:13px 16px;font-size:13.5px;font-weight:600;color:var(--text-2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+nav.tabs button.active{color:var(--brand-ink);border-bottom-color:var(--brand);}
+main{padding:22px 24px 60px;max-width:1360px;margin:0 auto;}
+.tabpanel{display:none;}
+.tabpanel.active{display:block;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
+.section-title{font-size:14px;font-weight:700;margin:0 0 12px;color:var(--text);}
+.section-sub{font-size:12.5px;color:var(--muted);margin:-6px 0 14px;}
+/* Import tab */
+.dropgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.dropzone{display:block;border:1.5px dashed var(--border);border-radius:var(--radius);padding:20px 14px;text-align:center;background:var(--surface);cursor:pointer;transition:border-color .15s,background .15s;}
+.dropzone.drag{border-color:var(--brand);background:var(--brand-soft);}
+.dropzone .ico{font-size:22px;margin-bottom:6px;}
+.dropzone h3{font-size:13px;margin:0 0 4px;}
+.dropzone p{font-size:11.5px;color:var(--muted);margin:0 0 10px;}
+.dropzone .browsebtn{display:inline-block;background:var(--brand);color:#fff;font-size:12px;font-weight:650;padding:7px 14px;border-radius:8px;margin-bottom:10px;}
+.dropzone:hover .browsebtn{opacity:.9;}
+.dropzone .status{font-size:12px;font-weight:600;color:var(--good);min-height:16px;}
+.dropzone .status.empty{color:var(--muted);font-weight:400;}
+.dropzone input{display:none;}
+.toolbar{display:flex;gap:10px;margin:16px 0 4px;flex-wrap:wrap;align-items:center;}
+/* Referentiels */
+.subtabs{display:flex;gap:6px;margin-bottom:14px;}
+.subtabs button{border:1px solid var(--border);background:var(--surface);padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text-2);cursor:pointer;}
+.subtabs button.active{background:var(--brand);color:#fff;border-color:var(--brand);}
+.dtabs{display:flex;gap:6px;margin:14px 0;}
+.dtabs button{border:1px solid var(--border);background:var(--surface);padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text-2);cursor:pointer;}
+.dtabs button.active{background:var(--brand);color:#fff;border-color:var(--brand);}
+input.inline-edit, select.inline-edit, textarea.inline-edit{width:100%;border:1px solid transparent;background:transparent;color:var(--text);font-size:12.5px;padding:5px 6px;border-radius:6px;font-family:inherit;}
+input.inline-edit:hover, select.inline-edit:hover, textarea.inline-edit:hover{border-color:var(--border);background:var(--surface-2);}
+input.inline-edit:focus, select.inline-edit:focus, textarea.inline-edit:focus{outline:none;border-color:var(--brand);background:var(--surface-2);}
+.seg.small button{padding:6px 11px;font-size:12px;}
+.overdue{color:var(--crit) !important;font-weight:700;}
+.statut-badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:650;}
+.statut-badge.st-afaire{background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);}
+.statut-badge.st-encours{background:#EAF1FD;color:#1D4ED8;}
+[data-theme="dark"] .statut-badge.st-encours{background:#16223B;color:#7AA2F7;}
+.statut-badge.st-termine{background:#E7F7ED;color:#15803D;}
+[data-theme="dark"] .statut-badge.st-termine{background:#123A2A;color:#3FBE6B;}
+.statut-badge.st-bloque{background:#FDECEC;color:#B91C1C;}
+[data-theme="dark"] .statut-badge.st-bloque{background:#3A1414;color:#F0616B;}
+table.datatable{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.datatable th{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;background:var(--surface);cursor:pointer;user-select:none;}
+table.datatable td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text);}
+table.datatable tbody tr:hover{background:var(--surface-2);}
+.tablewrap{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px;}
+/* Filters */
+.filterbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 16px;margin-bottom:18px;}
+.filterbar label{font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;}
+.filterbar select, .filterbar input[type=date]{border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12.5px;}
+.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.seg button{border:none;background:var(--surface-2);color:var(--text-2);padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;}
+.seg button.active{background:var(--brand);color:#fff;}
+/* KPI grid */
+.kpigrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;}
+.kpi{padding:16px 18px;position:relative;overflow:hidden;}
+.kpi .lbl{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;}
+.kpi .val{font-size:26px;font-weight:750;letter-spacing:-.01em;line-height:1;}
+.kpi .unit{font-size:13px;font-weight:500;color:var(--text-2);margin-left:3px;}
+.kpi .sub{font-size:11.5px;color:var(--muted);margin-top:6px;}
+.kpi .accent{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--brand);}
+.kpi.status-good .accent{background:var(--good);}
+.kpi.status-warn .accent{background:var(--warn);}
+.kpi.status-crit .accent{background:var(--crit);}
+/* charts */
+.chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
+.chartcard{padding:16px 18px;}
+.chartcard .ch-wrap{height:230px;position:relative;}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-2);}
+.legend span.sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
+.warnbox{padding:14px 16px;font-size:12.5px;color:var(--text-2);border-left:3px solid var(--warn);}
+.warnbox h4{margin:0 0 6px;font-size:12.5px;color:var(--warn);}
+.warnbox ul{margin:4px 0 0;padding-left:18px;}
+.pill{display:inline-block;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:11px;color:var(--text-2);margin-right:6px;}
+footer.note{margin-top:30px;font-size:11.5px;color:var(--muted);text-align:center;}
+.emptystate{padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:14px;}
+@media (max-width:1000px){.dropgrid{grid-template-columns:repeat(2,1fr);}.kpigrid{grid-template-columns:repeat(2,1fr);}.chartgrid{grid-template-columns:1fr;}.grid2{grid-template-columns:1fr;}}
+@media (max-width:600px){.dropgrid{grid-template-columns:1fr;}.kpigrid{grid-template-columns:1fr;}}
+.btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:650;cursor:pointer;}
+.btn.secondary{background:var(--surface-2);color:var(--text);border:1px solid var(--border);}
+.btn:hover{opacity:.9;}
+.pad{padding:18px;}
+.flexrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.smallmuted{font-size:11.5px;color:var(--muted);}
+</style>
+</head>
+<body data-theme="light">
+
+<div id="authGate" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;">
+  <div class="card pad" style="width:340px;">
+    <div class="section-title">Connexion</div>
+    <div class="section-sub">Connecte-toi avec le compte fourni par ton administrateur Firebase pour accéder au dashboard et à l'historique partagé.</div>
+    <div style="margin-bottom:10px;">
+      <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;">Email</label>
+      <input type="email" id="authEmail" autocomplete="username" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface-2);color:var(--text);">
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;">Mot de passe</label>
+      <input type="password" id="authPassword" autocomplete="current-password" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface-2);color:var(--text);">
+    </div>
+    <button class="btn" id="btnAuthSubmit" style="width:100%;">Se connecter</button>
+    <div class="smallmuted" id="authError" style="color:var(--crit);margin-top:10px;"></div>
+    <div class="smallmuted" id="authSkip" style="margin-top:14px;text-align:center;cursor:pointer;text-decoration:underline;">Continuer sans Firestore (mode local, non synchronisé)</div>
+  </div>
+</div>
+
+<header class="top">
+  <div class="brandmark"><span class="dot"></span><h1>Productivité &amp; CA Horaire</h1></div>
+  <span class="badge">SITE MADA</span>
+  <div class="spacer"></div>
+  <span class="smallmuted" id="fsStatus"></span>
+  <span class="meta" id="lastUpdateMeta">Aucune donnée chargée</span>
+  <span class="smallmuted" id="authUserBadge" style="display:none;"></span>
+  <button class="iconbtn" id="btnLogout" style="display:none;">Déconnexion</button>
+  <button class="iconbtn" id="btnShowLogin">Se connecter</button>
+  <button class="iconbtn" id="themeToggle" title="Thème clair / sombre">🌙 Sombre</button>
+</header>
+
+<nav class="tabs">
+  <button data-tab="import" class="active">1. Import</button>
+  <button data-tab="ref">2. Référentiels</button>
+  <button data-tab="dash">3. Dashboard</button>
+  <button data-tab="plan">4. Plan d'action</button>
+  <button data-tab="hist">5. Historique</button>
+</nav>
+
+<main>
+
+  <!-- ================= TAB IMPORT ================= -->
+  <section class="tabpanel active" id="tab-import">
+    <div class="card pad">
+      <div class="section-title">Import des données d'exploitation</div>
+      <div class="section-sub">Dépose les exports du jour (ou de la période) — formats .xls (export HTML Vonage) acceptés. Les fichiers s'ajoutent aux données déjà en mémoire.</div>
+      <div class="dropgrid">
+        <label class="dropzone" data-key="entrant" for="input-entrant">
+          <div class="ico">📞</div><h3>Appels entrants</h3><p>Export « Appel entrant »</p>
+          <span class="browsebtn">Choisir un fichier…</span>
+          <div class="status empty" id="status-entrant">Aucun fichier</div>
+          <input type="file" id="input-entrant" accept=".xls,.xlsx,.html,.htm" data-key="entrant">
+        </label>
+        <label class="dropzone" data-key="sortant" for="input-sortant">
+          <div class="ico">📱</div><h3>Appels sortants</h3><p>Export « Appel sortant »</p>
+          <span class="browsebtn">Choisir un fichier…</span>
+          <div class="status empty" id="status-sortant">Aucun fichier</div>
+          <input type="file" id="input-sortant" accept=".xls,.xlsx,.html,.htm" data-key="sortant">
+        </label>
+        <label class="dropzone" data-key="mails" for="input-mails">
+          <div class="ico">✉️</div><h3>Mails traités</h3><p>Export « mails traités »</p>
+          <span class="browsebtn">Choisir un fichier…</span>
+          <div class="status empty" id="status-mails">Aucun fichier</div>
+          <input type="file" id="input-mails" accept=".xls,.xlsx,.html,.htm" data-key="mails">
+        </label>
+        <label class="dropzone" data-key="rtt" for="input-rtt">
+          <div class="ico">🕒</div><h3>Temps de log (RTT)</h3><p>Export « RTT / Agent Summary »</p>
+          <span class="browsebtn">Choisir un fichier…</span>
+          <div class="status empty" id="status-rtt">Aucun fichier</div>
+          <input type="file" id="input-rtt" accept=".xls,.xlsx,.html,.htm" data-key="rtt">
+        </label>
+      </div>
+      <div class="toolbar">
+        <button class="btn secondary" id="btnResetData">Réinitialiser les données importées</button>
+        <span class="smallmuted" id="importSummary"></span>
+      </div>
+    </div>
+
+    <div class="card pad" style="margin-top:16px;">
+      <div class="section-title">Journal d'import</div>
+      <div class="tablewrap"><table class="datatable" id="importLogTable">
+        <thead><tr><th>Fichier</th><th>Type</th><th>Lignes lues</th><th>Période détectée</th><th>Statut</th></tr></thead>
+        <tbody><tr><td colspan="5" class="emptystate">Aucun import pour le moment</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ================= TAB REFERENTIELS ================= -->
+  <section class="tabpanel" id="tab-ref">
+    <div class="card pad">
+      <div class="section-title">Référentiels de calcul</div>
+      <div class="section-sub">Pré-remplis à partir des référentiels Mada fournis. Importe un nouveau fichier pour les mettre à jour — tant qu'aucun fichier n'est importé, les valeurs par défaut ci-dessous sont utilisées.</div>
+      <div class="subtabs">
+        <button class="subtab active" data-sub="flux">Référentiel flux → type d'acte</button>
+        <button class="subtab" data-sub="equipes">Répartition équipes (Mada)</button>
+        <button class="subtab" data-sub="tarifs">Grille tarifaire</button>
+      </div>
+
+      <div class="subpanel active" id="sub-flux">
+        <div class="flexrow" style="margin-bottom:10px;">
+          <label class="btn secondary" style="cursor:pointer;">Importer Référentiel_flux.xlsx<input type="file" id="fileFlux" accept=".xlsx,.xls" style="display:none;"></label>
+          <button class="btn secondary" id="resetFlux">Valeurs par défaut</button>
+          <span class="smallmuted" id="fluxStatus"></span>
+        </div>
+        <div class="tablewrap"><table class="datatable" id="tableFlux"><thead><tr><th>File d'attente</th><th>Type d'acte</th></tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="subpanel" id="sub-equipes" style="display:none;">
+        <div class="section-sub" style="margin-top:-2px;">Cette liste alimente directement le filtre « Agent » et le filtre « Manager » du Dashboard. Modifie le nom ou le manager d'un agent directement dans le tableau, ajoute un agent manuellement, ou détecte automatiquement ceux présents dans tes imports mais absents d'ici.</div>
+        <div class="flexrow" style="margin-bottom:10px;">
+          <label class="btn secondary" style="cursor:pointer;">Importer Repartition_equipes.xlsx<input type="file" id="fileEquipes" accept=".xlsx,.xls" style="display:none;"></label>
+          <button class="btn secondary" id="btnAddAgent">+ Ajouter un agent</button>
+          <button class="btn secondary" id="btnDetectAgents">Détecter les agents manquants</button>
+          <button class="btn secondary" id="resetEquipes">Valeurs par défaut</button>
+          <span class="smallmuted" id="equipesStatus"></span>
+        </div>
+        <div class="tablewrap"><table class="datatable" id="tableEquipes"><thead><tr><th>Identifiant agent</th><th>Nom</th><th>Manager</th><th>Site</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="subpanel" id="sub-tarifs" style="display:none;">
+        <div class="flexrow" style="margin-bottom:10px;">
+          <label class="btn secondary" style="cursor:pointer;">Importer Grille_tarifaire.xlsx<input type="file" id="fileTarifs" accept=".xlsx,.xls" style="display:none;"></label>
+          <button class="btn secondary" id="resetTarifs">Valeurs par défaut</button>
+          <span class="smallmuted" id="tarifsStatus"></span>
+        </div>
+        <div class="tablewrap"><table class="datatable" id="tableTarifs"><thead><tr><th>Site</th><th>Activité</th><th>Flux</th><th>Type d'acte</th><th>Prix jour normal (€)</th><th>Prix jour férié (€)</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB DASHBOARD ================= -->
+  <section class="tabpanel" id="tab-dash">
+    <div class="card filterbar" style="flex-direction:column;align-items:stretch;gap:12px;">
+      <div class="flexrow" style="gap:10px;">
+        <span class="smallmuted" style="font-weight:600;">Période rapide :</span>
+        <div class="seg small" id="segPeriodPreset">
+          <button data-p="today">Aujourd'hui</button>
+          <button data-p="yesterday">Hier</button>
+          <button data-p="thisweek">Cette semaine</button>
+          <button data-p="lastweek">Semaine dernière</button>
+          <button data-p="thismonth">Ce mois</button>
+          <button data-p="lastmonth">Mois dernier</button>
+        </div>
+      </div>
+      <div class="flexrow" style="gap:10px;">
+        <div>
+          <label>Regrouper par</label>
+          <div class="seg" id="segGranularite">
+            <button data-g="day" class="active">Jour</button>
+            <button data-g="week">Semaine</button>
+            <button data-g="month">Mois</button>
+          </div>
+        </div>
+        <div><label>Du (période personnalisée)</label><input type="date" id="filterFrom"></div>
+        <div><label>Au</label><input type="date" id="filterTo"></div>
+        <div><label>Manager</label><select id="filterManager"><option value="all">Tous les managers</option></select></div>
+        <div><label>Agent</label><select id="filterAgent"><option value="all">Tous les agents</option></select></div>
+        <div><label>Type d'acte</label>
+          <select id="filterActe">
+            <option value="all">Tous</option>
+            <option value="mail">Mail</option>
+            <option value="in">Appel entrant</option>
+            <option value="out">Appel sortant</option>
+          </select>
+        </div>
+        <div style="align-self:flex-end;"><button class="btn secondary" id="btnClearFilters">Réinitialiser</button></div>
+      </div>
+    </div>
+
+    <div class="dtabs">
+      <button class="dtab active" data-dsub="synthese">Synthèse</button>
+      <button class="dtab" data-dsub="agents">Détail par agent</button>
+    </div>
+
+    <div class="dpanel" id="dsub-synthese">
+      <div class="kpigrid" id="kpiGrid"></div>
+
+      <div class="section-title" style="margin-top:4px;">Répartition du temps de log (RTT)</div>
+      <div class="kpigrid" id="kpiGridRtt"></div>
+
+      <div class="chartgrid">
+        <div class="card chartcard">
+          <div class="section-title">Évolution du CA/H</div>
+          <div class="ch-wrap"><canvas id="chartCaH"></canvas></div>
+        </div>
+        <div class="card chartcard">
+          <div class="section-title">Évolution de la productivité horaire</div>
+          <div class="ch-wrap"><canvas id="chartProd"></canvas></div>
+        </div>
+        <div class="card chartcard">
+          <div class="section-title">Répartition des actes traités</div>
+          <div class="ch-wrap"><canvas id="chartRepartition"></canvas></div>
+        </div>
+        <div class="card chartcard">
+          <div class="section-title">Taux d'occupation — tendance</div>
+          <div class="ch-wrap"><canvas id="chartOccupation"></canvas></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card pad">
+          <div class="section-title">Classement agents</div>
+          <div class="ch-wrap" style="height:320px;"><canvas id="chartAgents"></canvas></div>
+        </div>
+        <div class="card pad" id="warnCard">
+          <div class="section-title">Contrôles qualité de la donnée</div>
+          <div id="warnContent" class="smallmuted">Aucune alerte.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dpanel" id="dsub-agents" style="display:none;">
+      <div class="card pad">
+        <div class="flexrow" style="justify-content:space-between;margin-bottom:10px;">
+          <div class="section-title" style="margin:0;">Détail par agent</div>
+          <input type="text" id="agentSearch" placeholder="Rechercher un agent ou un manager…" style="border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12.5px;min-width:260px;">
+        </div>
+        <div class="tablewrap" style="max-height:560px;"><table class="datatable" id="tableAgentDetail">
+          <thead><tr>
+            <th data-k="name">Agent</th><th data-k="manager">Manager</th><th data-k="ca">CA (€)</th><th data-k="log">Temps de log</th>
+            <th data-k="caH">CA/H (€)</th><th data-k="dmt">DMT</th><th data-k="acw">ACW</th>
+            <th data-k="mea">MEA</th><th data-k="actes">Actes</th><th data-k="prod">Prod./H</th><th data-k="occ">Taux occ.</th>
+            <th data-k="dispo">Disponibilité</th><th data-k="retrait">Retrait</th><th data-k="panier">Panier</th><th data-k="pause">Pause</th><th data-k="brief">Brief</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB PLAN D'ACTION ================= -->
+  <section class="tabpanel" id="tab-plan">
+    <div class="card pad">
+      <div class="section-title">Suivi du plan d'action</div>
+      <div class="section-sub">Actions issues de l'analyse des résultats opérationnels. Synchronisé en temps réel via Firestore — visible et modifiable par toute l'équipe connectée.</div>
+      <div class="flexrow" style="margin-bottom:12px;justify-content:space-between;">
+        <div class="flexrow" style="gap:10px;">
+          <button class="btn" id="btnAddAction">+ Nouvelle action</button>
+          <div class="seg small" id="segPlanFilter">
+            <button data-s="all" class="active">Toutes</button>
+            <button data-s="À faire">À faire</button>
+            <button data-s="En cours">En cours</button>
+            <button data-s="Terminé">Terminé</button>
+            <button data-s="Bloqué">Bloqué</button>
+          </div>
+        </div>
+        <span class="smallmuted" id="planStatus"></span>
+      </div>
+      <div class="tablewrap" style="max-height:600px;"><table class="datatable" id="tablePlanAction">
+        <thead><tr>
+          <th style="min-width:180px;">Constat / Problème</th><th style="min-width:180px;">Action</th><th>Responsable</th>
+          <th>Priorité</th><th>Échéance</th><th>Statut</th><th style="min-width:180px;">Commentaire / suivi</th><th></th>
+        </tr></thead>
+        <tbody><tr><td colspan="8" class="emptystate">Connecte-toi (onglet de connexion) pour voir et gérer le plan d'action</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ================= TAB HISTORIQUE ================= -->
+  <section class="tabpanel" id="tab-hist">
+    <div class="card pad">
+      <div class="section-title">Historique des périodes</div>
+      <div class="section-sub">Enregistre un instantané des KPI de la période affichée dans le Dashboard. L'historique vit en mémoire pendant la session — exporte-le en JSON pour le conserver et le réimporter plus tard (aucune donnée n'est stockée dans le navigateur).</div>
+      <div class="flexrow" style="margin-bottom:14px;">
+        <button class="btn" id="btnSaveSnapshot">Enregistrer l'instantané affiché</button>
+        <button class="btn secondary" id="btnExportHist">Exporter l'historique (JSON)</button>
+        <label class="btn secondary" style="cursor:pointer;">Importer un historique (JSON)<input type="file" id="fileImportHist" accept=".json" style="display:none;"></label>
+        <button class="btn secondary" id="btnClearHist">Vider l'historique</button>
+      </div>
+      <div class="tablewrap"><table class="datatable" id="tableHistorique">
+        <thead><tr><th>Enregistré le</th><th>Période</th><th>Granularité</th><th>CA (€)</th><th>Actes</th><th>CA/H (€)</th><th>Prod./H</th><th>Taux occ.</th><th></th></tr></thead>
+        <tbody><tr><td colspan="9" class="emptystate">Aucun instantané enregistré</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="card chartcard" style="margin-top:14px;">
+      <div class="section-title">Tendance CA/H entre instantanés</div>
+      <div class="ch-wrap"><canvas id="chartHistTrend"></canvas></div>
+    </div>
+  </section>
+
+  <footer class="note">Dashboard Productivité &amp; CA Horaire — Mada · calculs effectués localement dans le navigateur. Sans connexion Firestore, aucune donnée n'est transmise à un serveur ; une fois connecté, les imports, référentiels et le plan d'action sont synchronisés avec ta base Firestore Tersea.</footer>
+</main>
+
+<script src="./app.js"></script>
+<script src="./firebase-sync.js"></script>
+</body>
+</html>
