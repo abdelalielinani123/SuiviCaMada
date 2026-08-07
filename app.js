@@ -375,7 +375,8 @@ function enrichEntrantRows(rows, fluxMap, tarifMap, madaIds, equipeMap){
     out.push({
       cat:'in', agentId:r.agentId, agentName:equipeMap[r.agentId]||r.agentId, date:r.date,
       ca: prix||0, tarife: prix!==null,
-      dmt_num: r.temps_traitement, acw: r.acw, mea: r.duree_attente,
+      // DMT = (durée de communication + After Call Work + mise en attente) en secondes / nb d'appels traités.
+      dmt_num: r.duree_comm + r.acw + r.duree_attente, acw: r.acw, mea: r.duree_attente,
     });
   });
   return out;
@@ -559,6 +560,9 @@ const KPI_DEFS = [
   {key:'acw', label:'ACW', fmt: v=>fmtDurationSec(v), sub:()=>'After Call Work moyen / appel entrant'},
   {key:'mea', label:'MEA', fmt: v=>fmtDurationSec(v), sub:()=>'Mise en attente moyenne / appel entrant'},
   {key:'nbActes', label:'Actes traités', fmt: v=>fmtNum(v,0), sub:k=>`${k.nbMail} mails · ${k.nbIn} entrants · ${k.nbOut} sortants`},
+  {key:'nbMail', label:'Mails traités', fmt: v=>fmtNum(v,0), sub:k=>k.nbActes ? fmtPct(k.nbMail/k.nbActes)+' des actes' : '—'},
+  {key:'nbIn', label:'Appels entrants', fmt: v=>fmtNum(v,0), sub:k=>k.nbActes ? fmtPct(k.nbIn/k.nbActes)+' des actes' : '—'},
+  {key:'nbOut', label:'Appels sortants', fmt: v=>fmtNum(v,0), sub:k=>k.nbActes ? fmtPct(k.nbOut/k.nbActes)+' des actes' : '—'},
   {key:'prodH', label:'Productivité horaire', fmt: v=>fmtNum(v,2)+' actes/h', sub:()=>'Actes traités / heure de log'},
   {key:'tauxOcc', label:"Taux d'occupation", fmt: fmtPct, sub:()=>'(Communication + attente + panier + appel sortant) / Log', status:v=> v>=0.8?'good': v>=0.65?'warn':'crit'},
 ];
@@ -679,7 +683,8 @@ function agentBreakdown(actes, rtt){
   map.forEach(v=>{
     const k = computeKPIs(v.actes, v.rtt);
     rows.push({ id:v.id, name:v.name, manager: managerMap[String(v.id).toUpperCase()] || '',
-      ca:k.ca, log:k.tempsLog, caH:k.caH, dmt:k.dmt, acw:k.acw, mea:k.mea, actes:k.nbActes, prod:k.prodH, occ:k.tauxOcc,
+      ca:k.ca, log:k.tempsLog, caH:k.caH, dmt:k.dmt, acw:k.acw, mea:k.mea, actes:k.nbActes,
+      nbMail:k.nbMail, nbIn:k.nbIn, nbOut:k.nbOut, prod:k.prodH, occ:k.tauxOcc,
       dispo:k.tauxDispo, retrait:k.tauxRetrait, panier:k.tauxPanier, pause:k.tauxPause, brief:k.tauxBrief });
   });
   return rows;
@@ -691,12 +696,13 @@ function renderAgentTable(rows){
   const filtered = search ? rows.filter(r => (r.name||'').toLowerCase().includes(search) || (r.manager||'').toLowerCase().includes(search) || (r.id||'').toLowerCase().includes(search)) : rows;
   const {key, dir} = STATE.sort;
   const sorted = filtered.slice().sort((a,b)=> (a[key]>b[key]?1:a[key]<b[key]?-1:0)*dir);
-  if (!sorted.length){ tbody.innerHTML = '<tr><td colspan="16" class="emptystate">Aucune donnée pour ces filtres</td></tr>'; return; }
+  if (!sorted.length){ tbody.innerHTML = '<tr><td colspan="19" class="emptystate">Aucune donnée pour ces filtres</td></tr>'; return; }
   tbody.innerHTML = sorted.map(r=>`<tr>
     <td>${escapeHtml(r.name)}</td><td>${r.manager?escapeHtml(r.manager):'<span class="smallmuted">—</span>'}</td>
     <td>${fmtMoney2(r.ca)}</td><td>${fmtDurationSec(r.log)}</td>
     <td>${fmtMoney2(r.caH)}</td><td>${fmtDurationSec(r.dmt)}</td><td>${fmtDurationSec(r.acw)}</td>
-    <td>${fmtDurationSec(r.mea)}</td><td>${r.actes}</td><td>${fmtNum(r.prod,2)}</td><td>${fmtPct(r.occ)}</td>
+    <td>${fmtDurationSec(r.mea)}</td><td>${r.actes}</td><td>${r.nbMail||0}</td><td>${r.nbIn||0}</td><td>${r.nbOut||0}</td>
+    <td>${fmtNum(r.prod,2)}</td><td>${fmtPct(r.occ)}</td>
     <td>${fmtPct(r.dispo)}</td><td>${fmtPct(r.retrait)}</td><td>${fmtPct(r.panier)}</td><td>${fmtPct(r.pause)}</td><td>${fmtPct(r.brief)}</td>
   </tr>`).join('');
 }
@@ -724,14 +730,20 @@ function refreshDashboard(){
   const actes = filteredActes(f);
   const rtt = filteredRtt(f);
   const kpi = computeKPIs(actes, rtt);
-  renderKpiGridInto('kpiGrid', KPI_DEFS, kpi);
-  renderKpiGridInto('kpiGridRtt', KPI_DEFS_RTT, kpi);
-  const series = timeSeries(actes, rtt, f.gran);
-  const agentRows = agentBreakdown(actes, rtt);
-  STATE.lastAgentRows = agentRows;
-  renderCharts(series, kpi, agentRows);
-  renderAgentTable(agentRows);
-  renderWarnings();
+  // Chaque étape de rendu est isolée : si l'une d'elles échoue (ex. un graphique qui plante),
+  // les autres continuent de s'exécuter — en particulier populateManagerFilter/populateAgentFilter
+  // en fin de fonction, qui doivent TOUJOURS tourner sous peine de figer les filtres Manager/Agent.
+  try{ renderKpiGridInto('kpiGrid', KPI_DEFS, kpi); }catch(e){ console.error('renderKpiGridInto(kpiGrid) a échoué', e); }
+  try{ renderKpiGridInto('kpiGridRtt', KPI_DEFS_RTT, kpi); }catch(e){ console.error('renderKpiGridInto(kpiGridRtt) a échoué', e); }
+  let agentRows = [];
+  try{
+    const series = timeSeries(actes, rtt, f.gran);
+    agentRows = agentBreakdown(actes, rtt);
+    STATE.lastAgentRows = agentRows;
+    renderCharts(series, kpi, agentRows);
+  }catch(e){ console.error('renderCharts a échoué', e); }
+  try{ renderAgentTable(agentRows); }catch(e){ console.error('renderAgentTable a échoué', e); }
+  try{ renderWarnings(); }catch(e){ console.error('renderWarnings a échoué', e); }
   populateManagerFilter();
   populateAgentFilter();
 }
@@ -786,11 +798,97 @@ async function handleFileForKey(key, file){
     updateLastUpdateMeta();
     refreshDashboard();
     if (window.syncImportToFirestore) window.syncImportToFirestore(key, normalized, file.name);
+    if (window.logImportHistory) window.logImportHistory({ fileName:file.name, type:key, counts:{[key]:normalized.length}, totalRows:normalized.length, period });
   }catch(e){
     console.error(e);
     statusEl.textContent = 'Erreur de lecture';
     STATE.importLog.unshift({file:file.name, type:meta.label, count:0, period:'—', status:'Erreur: '+e.message});
     updateImportLogTable();
+  }
+}
+
+/* ---------- Export / Import JSON (fichier unique de sauvegarde) ---------- */
+// Format d'échange : un seul fichier .json regroupant les 4 sources déjà normalisées
+// (entrant/sortant/mails/rtt), pour pouvoir sauvegarder puis réinjecter d'un coup toutes
+// les données d'une période, sans redéposer les 4 fichiers Vonage d'origine.
+const JSON_EXPORT_FORMAT = 'mada-dash-export';
+const JSON_EXPORT_VERSION = 1;
+
+function buildJsonExportPayload(){
+  const payload = { format: JSON_EXPORT_FORMAT, version: JSON_EXPORT_VERSION, exportedAt: new Date().toISOString(), raw: {} };
+  ['entrant','sortant','mails','rtt'].forEach(k=>{
+    payload.raw[k] = STATE.raw[k].map(r => ({ ...r, date: r.date ? r.date.toISOString() : null }));
+  });
+  return payload;
+}
+
+function reviveRawFromJsonPayload(payload){
+  if (!payload || typeof payload !== 'object' || !payload.raw) throw new Error('Format JSON non reconnu (clé "raw" manquante).');
+  const out = { entrant:[], sortant:[], mails:[], rtt:[] };
+  ['entrant','sortant','mails','rtt'].forEach(k=>{
+    const arr = Array.isArray(payload.raw[k]) ? payload.raw[k] : [];
+    out[k] = arr.map(r => ({ ...r, date: r.date ? new Date(r.date) : null })).filter(r => r.date instanceof Date && !isNaN(r.date));
+  });
+  return out;
+}
+
+function exportDataAsJson(){
+  const payload = buildJsonExportPayload();
+  const total = Object.values(payload.raw).reduce((s,a)=>s+a.length,0);
+  if (!total){ alert("Aucune donnée en mémoire à exporter — importe d'abord au moins un fichier."); return; }
+  const blob = new Blob([JSON.stringify(payload)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `mada-dash-export-${dateKey(new Date())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
+async function handleJsonImportFile(file){
+  const statusEl = document.getElementById('status-json');
+  if (statusEl){ statusEl.textContent = 'Lecture en cours…'; statusEl.classList.remove('empty'); }
+  try{
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    const revived = reviveRawFromJsonPayload(payload);
+    const counts = {};
+    let totalRows = 0;
+    ['entrant','sortant','mails','rtt'].forEach(k=>{
+      STATE.raw[k] = STATE.raw[k].concat(revived[k]);
+      counts[k] = revived[k].length;
+      totalRows += revived[k].length;
+    });
+    const allDates = ['entrant','sortant','mails','rtt'].flatMap(k=>revived[k].map(r=>r.date)).sort((a,b)=>a-b);
+    const period = allDates.length ? `${dateKey(allDates[0])} → ${dateKey(allDates[allDates.length-1])}` : '—';
+    if (statusEl) statusEl.textContent = `${file.name} — ${totalRows} lignes (JSON)`;
+    STATE.importLog.unshift({file:file.name, type:'Import JSON (sauvegarde)', count:totalRows, period, status:'OK'});
+    updateImportLogTable();
+    updateLastUpdateMeta();
+    refreshDashboard();
+    if (window.syncImportToFirestore){
+      ['entrant','sortant','mails','rtt'].forEach(k=>{
+        if (revived[k].length) window.syncImportToFirestore(k, revived[k], file.name);
+      });
+    }
+    if (window.logImportHistory) window.logImportHistory({ fileName:file.name, type:'json', counts, totalRows, period });
+  }catch(e){
+    console.error(e);
+    if (statusEl) statusEl.textContent = 'Erreur de lecture JSON';
+    STATE.importLog.unshift({file:file.name, type:'Import JSON (sauvegarde)', count:0, period:'—', status:'Erreur: '+e.message});
+    updateImportLogTable();
+  }
+}
+
+function wireJsonImportExport(){
+  const btnExport = document.getElementById('btnExportJson');
+  if (btnExport) btnExport.addEventListener('click', exportDataAsJson);
+  const inputJson = document.getElementById('input-json');
+  if (inputJson) inputJson.addEventListener('change', e=>{ if (e.target.files[0]) handleJsonImportFile(e.target.files[0]); });
+  const zoneJson = document.querySelector('.dropzone[data-key="json"]');
+  if (zoneJson){
+    ['dragenter','dragover'].forEach(evt=> zoneJson.addEventListener(evt, e=>{ e.preventDefault(); zoneJson.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt=> zoneJson.addEventListener(evt, e=>{ e.preventDefault(); zoneJson.classList.remove('drag'); }));
+    zoneJson.addEventListener('drop', e=>{ const file = e.dataTransfer.files[0]; if (file) handleJsonImportFile(file); });
   }
 }
 
@@ -1047,11 +1145,18 @@ function wireFilters(){
       refreshDashboard();
     });
   });
-  ['filterFrom','filterTo','filterAgent','filterActe','filterManager'].forEach(id=> document.getElementById(id).addEventListener('change', refreshDashboard));
+  // NB : le filtre Manager a un comportement particulier (il doit d'abord remettre le filtre
+  // Agent à "Tous les agents" AVANT de rafraîchir, sinon un agent d'un autre manager resté
+  // sélectionné produit un affichage vide qui ne se corrige jamais tout seul). On le gère donc
+  // avec UN SEUL listener dédié, distinct de la boucle générique ci-dessous.
+  ['filterFrom','filterTo','filterAgent','filterActe'].forEach(id=> document.getElementById(id).addEventListener('change', refreshDashboard));
   ['filterFrom','filterTo'].forEach(id=> document.getElementById(id).addEventListener('input', ()=>{
     document.querySelectorAll('#segPeriodPreset button').forEach(x=>x.classList.remove('active'));
   }));
-  document.getElementById('filterManager').addEventListener('change', ()=>{ document.getElementById('filterAgent').value='all'; });
+  document.getElementById('filterManager').addEventListener('change', ()=>{
+    document.getElementById('filterAgent').value = 'all';
+    refreshDashboard();
+  });
   document.getElementById('btnClearFilters').addEventListener('click', ()=>{
     document.getElementById('filterFrom').value=''; document.getElementById('filterTo').value='';
     document.getElementById('filterAgent').value='all'; document.getElementById('filterActe').value='all';
@@ -1099,7 +1204,7 @@ function wireTheme(){
 
 function init(){
   wireDropzones(); wireReferentiels(); wireHistorique(); wireTabs(); wireFilters(); wireTheme();
-  wireDashboardSubtabs(); wirePeriodPresets();
+  wireDashboardSubtabs(); wirePeriodPresets(); wireJsonImportExport();
   renderRefTables();
   updateImportLogTable();
   renderHistTable();
