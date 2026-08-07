@@ -133,10 +133,10 @@ footer.note{margin-top:30px;font-size:11.5px;color:var(--muted);text-align:cente
 <div id="authGate" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;">
   <div class="card pad" style="width:340px;">
     <div class="section-title">Connexion</div>
-    <div class="section-sub">Connecte-toi avec le compte fourni par ton administrateur Firebase pour accéder au dashboard et à l'historique partagé.</div>
+    <div class="section-sub">Connecte-toi avec l'identifiant fourni par ton administrateur pour accéder au dashboard et à l'historique partagé.</div>
     <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;">Email</label>
-      <input type="email" id="authEmail" autocomplete="username" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface-2);color:var(--text);">
+      <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;">Identifiant</label>
+      <input type="text" id="authIdentifiant" autocomplete="username" placeholder="ex : ali" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface-2);color:var(--text);">
     </div>
     <div style="margin-bottom:14px;">
       <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;">Mot de passe</label>
@@ -208,10 +208,29 @@ footer.note{margin-top:30px;font-size:11.5px;color:var(--muted);text-align:cente
     </div>
 
     <div class="card pad" style="margin-top:16px;">
+      <div class="section-title">Sauvegarde / import JSON (fichier unique)</div>
+      <div class="section-sub">Exporte en un seul fichier .json toutes les données actuellement en mémoire (appels entrants/sortants, mails, RTT) pour les sauvegarder ou les transférer — puis réinjecte ce même fichier ici plus tard pour retrouver exactement ces données.</div>
+      <div class="flexrow">
+        <button class="btn secondary" id="btnExportJson">⬇️ Exporter les données en JSON</button>
+        <label class="btn secondary" style="cursor:pointer;">📥 Importer un fichier JSON…<input type="file" id="input-json" accept=".json" style="display:none;"></label>
+        <span class="smallmuted status empty" id="status-json">Aucun fichier</span>
+      </div>
+    </div>
+
+    <div class="card pad" style="margin-top:16px;">
       <div class="section-title">Journal d'import</div>
       <div class="tablewrap"><table class="datatable" id="importLogTable">
         <thead><tr><th>Fichier</th><th>Type</th><th>Lignes lues</th><th>Période détectée</th><th>Statut</th></tr></thead>
         <tbody><tr><td colspan="5" class="emptystate">Aucun import pour le moment</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <div class="card pad" style="margin-top:16px;">
+      <div class="section-title">Historique des imports (base de données)</div>
+      <div class="section-sub">Historique complet, partagé entre tous les appareils et sessions, conservé dans Firestore — connecte-toi pour y accéder.</div>
+      <div class="tablewrap"><table class="datatable" id="tableImportHistory">
+        <thead><tr><th>Fichier</th><th>Type</th><th>Lignes</th><th>Période</th><th>Importé par</th><th>Importé le</th></tr></thead>
+        <tbody><tr><td colspan="6" class="emptystate">Connecte-toi pour voir l'historique des imports</td></tr></tbody>
       </table></div>
     </div>
   </section>
@@ -350,7 +369,9 @@ footer.note{margin-top:30px;font-size:11.5px;color:var(--muted);text-align:cente
           <thead><tr>
             <th data-k="name">Agent</th><th data-k="manager">Manager</th><th data-k="ca">CA (€)</th><th data-k="log">Temps de log</th>
             <th data-k="caH">CA/H (€)</th><th data-k="dmt">DMT</th><th data-k="acw">ACW</th>
-            <th data-k="mea">MEA</th><th data-k="actes">Actes</th><th data-k="prod">Prod./H</th><th data-k="occ">Taux occ.</th>
+            <th data-k="mea">MEA</th><th data-k="actes">Actes</th>
+            <th data-k="nbMail">Mails</th><th data-k="nbIn">Entrants</th><th data-k="nbOut">Sortants</th>
+            <th data-k="prod">Prod./H</th><th data-k="occ">Taux occ.</th>
             <th data-k="dispo">Disponibilité</th><th data-k="retrait">Retrait</th><th data-k="panier">Panier</th><th data-k="pause">Pause</th><th data-k="brief">Brief</th>
           </tr></thead>
           <tbody></tbody>
@@ -412,7 +433,7 @@ footer.note{margin-top:30px;font-size:11.5px;color:var(--muted);text-align:cente
   <footer class="note">Dashboard Productivité &amp; CA Horaire — Mada · calculs effectués localement dans le navigateur. Sans connexion Firestore, aucune donnée n'est transmise à un serveur ; une fois connecté, les imports, référentiels et le plan d'action sont synchronisés avec ta base Firestore Tersea.</footer>
 </main>
 
-<script src="./app.js"></script>
-<script src="./firebase-sync.js"></script>
+<script src="./app.js?v=4"></script>
+<script src="./firebase-sync.js?v=4"></script>
 </body>
 </html>
