@@ -14,7 +14,11 @@
       - Firestore Database → crée une base (mode production).
       - Authentication → Sign-in method → active "Adresse e-mail/Mot de passe".
       - Authentication → Users → ajoute un compte pour chaque personne qui doit
-        accéder au dashboard (toi + tes managers).
+        accéder au dashboard (toi + tes managers). La connexion se fait par simple
+        identifiant (pas une vraie adresse mail) : dans le champ "Email" de la
+        Console, mets "<identifiant>@suivicamada.local" (ex. "ali@suivicamada.local"),
+        et choisis un mot de passe. La personne se connectera avec juste "ali" +
+        ce mot de passe — voir AUTH_FAKE_DOMAIN plus bas si tu changes de projet.
    3) Colle les règles de sécurité ci-dessous dans Firestore → Règles, puis
       "Publier" :
 
@@ -169,6 +173,58 @@ window.syncImportToFirestore = async function(key, normalizedRows, fileName){
   }
 };
 
+/* ============================= HISTORIQUE DES IMPORTS ============================= */
+// Chaque import (les 4 sources Vonage + l'import JSON de sauvegarde) est journalisé dans
+// Firestore pour pouvoir retrouver, depuis n'importe quel appareil, quels fichiers ont été
+// importés, quand, par qui, et sur quelle période — au-delà du simple "Journal d'import" en
+// mémoire de la page (STATE.importLog), qui lui est perdu à chaque rechargement.
+let importHistoryUnsub = null;
+const IMPORT_TYPE_LABELS = { entrant:'Appels entrants', sortant:'Appels sortants', mails:'Mails traités', rtt:'Temps de log (RTT)', json:'Import JSON (sauvegarde)' };
+
+window.logImportHistory = async function(entry){
+  if (!window.FIRESTORE_READY) return;
+  try{
+    await db.collection('imports_history').add({
+      fileName: entry.fileName || '', type: entry.type || '', counts: entry.counts || {},
+      totalRows: entry.totalRows || 0, period: entry.period || '—',
+      importedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      importedBy: (firebase.auth().currentUser && fakeEmailToIdentifiant(firebase.auth().currentUser.email)) || '',
+    });
+  } catch(e){ console.error("Journalisation de l'import échouée", e); }
+};
+
+function renderImportHistoryTable(rows){
+  const tbody = document.querySelector('#tableImportHistory tbody');
+  if (!tbody) return;
+  if (!rows.length){ tbody.innerHTML = '<tr><td colspan="6" class="emptystate">Aucun import enregistré en base pour le moment</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r=>{
+    const when = r.importedAt && r.importedAt.toDate ? r.importedAt.toDate().toLocaleString('fr-FR') : '—';
+    return `<tr>
+      <td>${escapeHtml(r.fileName||'')}</td>
+      <td>${escapeHtml(IMPORT_TYPE_LABELS[r.type]||r.type||'')}</td>
+      <td>${r.totalRows||0}</td>
+      <td>${escapeHtml(r.period||'—')}</td>
+      <td>${escapeHtml(r.importedBy||'—')}</td>
+      <td>${when}</td>
+    </tr>`;
+  }).join('');
+}
+
+function startImportHistoryListener(){
+  if (importHistoryUnsub) importHistoryUnsub();
+  importHistoryUnsub = db.collection('imports_history').orderBy('importedAt','desc').limit(200).onSnapshot(snap=>{
+    renderImportHistoryTable(snap.docs.map(d=>d.data()));
+  }, err=>{
+    console.error("Ecoute de l'historique des imports échouée", err);
+    const tbody = document.querySelector('#tableImportHistory tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="emptystate">Erreur de synchronisation (voir console)</td></tr>';
+  });
+}
+function stopImportHistoryListener(){
+  if (importHistoryUnsub){ importHistoryUnsub(); importHistoryUnsub = null; }
+  renderImportHistoryTable([]);
+}
+
 /* ============================= LECTURE DES ROLLUPS (Dashboard) ============================= */
 
 async function fetchRollupsForRange(fromKey, toKey){
@@ -243,7 +299,8 @@ function agentBreakdownFromRollups(rows){
   byAgent.forEach((items, agentId)=>{
     const k = computeKPIsFromRollupList(items);
     out.push({ id:agentId, name: items[0].agentName || agentId, manager: managerMap[String(agentId).toUpperCase()]||'',
-      ca:k.ca, log:k.tempsLog, caH:k.caH, dmt:k.dmt, acw:k.acw, mea:k.mea, actes:k.nbActes, prod:k.prodH, occ:k.tauxOcc,
+      ca:k.ca, log:k.tempsLog, caH:k.caH, dmt:k.dmt, acw:k.acw, mea:k.mea, actes:k.nbActes,
+      nbMail:k.nbMail, nbIn:k.nbIn, nbOut:k.nbOut, prod:k.prodH, occ:k.tauxOcc,
       dispo:k.tauxDispo, retrait:k.tauxRetrait, panier:k.tauxPanier, pause:k.tauxPause, brief:k.tauxBrief });
   });
   return out;
@@ -276,14 +333,20 @@ async function refreshDashboardFromFirestore(){
   if (f.acte !== 'all') filtered = filtered.map(r => projectRollupToActe(r, f.acte));
 
   const kpi = computeKPIsFromRollupList(filtered);
-  renderKpiGridInto('kpiGrid', KPI_DEFS, kpi);
-  renderKpiGridInto('kpiGridRtt', KPI_DEFS_RTT, kpi);
-  const series = timeSeriesFromRollups(filtered, f.gran);
-  const agentRows = agentBreakdownFromRollups(filtered);
-  STATE.lastAgentRows = agentRows;
-  renderCharts(series, kpi, agentRows);
-  renderAgentTable(agentRows);
-  renderWarnings();
+  // Chaque étape de rendu est isolée : si l'une d'elles plante (graphique, table...), les
+  // suivantes s'exécutent quand même — en particulier populateManagerFilter/populateAgentFilter,
+  // qui DOIVENT toujours tourner sinon les filtres Manager/Agent restent figés silencieusement.
+  try{ renderKpiGridInto('kpiGrid', KPI_DEFS, kpi); }catch(e){ console.error('renderKpiGridInto(kpiGrid) a échoué', e); }
+  try{ renderKpiGridInto('kpiGridRtt', KPI_DEFS_RTT, kpi); }catch(e){ console.error('renderKpiGridInto(kpiGridRtt) a échoué', e); }
+  let agentRows = [];
+  try{
+    const series = timeSeriesFromRollups(filtered, f.gran);
+    agentRows = agentBreakdownFromRollups(filtered);
+    STATE.lastAgentRows = agentRows;
+    renderCharts(series, kpi, agentRows);
+  }catch(e){ console.error('renderCharts (Firestore) a échoué', e); }
+  try{ renderAgentTable(agentRows); }catch(e){ console.error('renderAgentTable (Firestore) a échoué', e); }
+  try{ renderWarnings(); }catch(e){ console.error('renderWarnings (Firestore) a échoué', e); }
   populateManagerFilter();
   populateAgentFilter();
   setFsStatus(rows.length + ' jours-agent chargés depuis Firestore');
@@ -416,7 +479,7 @@ function wirePlanAction(){
     db.collection('plans_action').add({
       constat:'', action:'', responsable:'', priorite:'Moyenne', echeance:'', statut:'À faire', commentaire:'',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      createdBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || '',
+      createdBy: (firebase.auth().currentUser && fakeEmailToIdentifiant(firebase.auth().currentUser.email)) || '',
     }).catch(err=>console.error('Création action échouée', err));
   });
   document.querySelectorAll('#segPlanFilter button').forEach(b=>{
@@ -430,6 +493,21 @@ function wirePlanAction(){
 }
 
 /* ============================= AUTHENTIFICATION ============================= */
+// Firebase Authentication (fournisseur "Email/Mot de passe") exige un identifiant au format
+// email. Pour permettre une connexion par simple identifiant (ex. "ali") sans adresse mail
+// réelle, on lui accole en interne un domaine factice avant d'appeler Firebase — l'utilisateur
+// ne voit et ne tape jamais que son identifiant.
+//
+// Quand tu crées un compte dans Console Firebase → Authentication → Users → Add user, mets
+// dans le champ "Email" : identifiant + "@suivicamada.local" (ex. "ali@suivicamada.local"),
+// et le mot de passe de ton choix. C'est ce même "ali" que la personne tapera pour se connecter.
+const AUTH_FAKE_DOMAIN = '@suivicamada.local';
+function identifiantToFakeEmail(identifiant){
+  return identifiant.trim().toLowerCase().replace(/\s+/g,'.') + AUTH_FAKE_DOMAIN;
+}
+function fakeEmailToIdentifiant(email){
+  return String(email||'').split('@')[0];
+}
 
 function showAuthGate(show){
   document.getElementById('authGate').style.display = show ? 'flex' : 'none';
@@ -439,11 +517,12 @@ function onSignedIn(user){
   window.FIRESTORE_READY = true;
   showAuthGate(false);
   document.getElementById('authUserBadge').style.display = 'inline';
-  document.getElementById('authUserBadge').textContent = user.email;
+  document.getElementById('authUserBadge').textContent = fakeEmailToIdentifiant(user.email);
   document.getElementById('btnLogout').style.display = 'inline-flex';
   document.getElementById('btnShowLogin').style.display = 'none';
   loadReferentielsFromFirestore();
   startPlanActionListener();
+  startImportHistoryListener();
   refreshDashboard();
 }
 function onSignedOut(){
@@ -453,21 +532,26 @@ function onSignedOut(){
   document.getElementById('btnShowLogin').style.display = 'inline-flex';
   setFsStatus('');
   stopPlanActionListener();
+  stopImportHistoryListener();
   showAuthGate(true);
   refreshDashboard();
 }
 
 function wireAuth(){
   document.getElementById('btnAuthSubmit').addEventListener('click', ()=>{
-    const email = document.getElementById('authEmail').value.trim();
+    const identifiant = document.getElementById('authIdentifiant').value.trim();
     const pass = document.getElementById('authPassword').value;
     const errEl = document.getElementById('authError');
     errEl.textContent = '';
-    if (!email || !pass){ errEl.textContent = 'Renseigne un email et un mot de passe.'; return; }
-    firebase.auth().signInWithEmailAndPassword(email, pass).catch(err=>{
+    if (!identifiant || !pass){ errEl.textContent = 'Renseigne un identifiant et un mot de passe.'; return; }
+    firebase.auth().signInWithEmailAndPassword(identifiantToFakeEmail(identifiant), pass).catch(err=>{
       console.error(err);
       errEl.textContent = err.code === 'auth/invalid-api-key' || err.code === 'auth/api-key-not-valid'
         ? "Configuration Firebase manquante ou invalide (voir le haut de firebase-sync.js)."
+        : err.code === 'auth/configuration-not-found'
+        ? "L'authentification par e-mail/mot de passe n'est pas encore activée dans la Console Firebase (Authentication → Sign-in method)."
+        : err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential'
+        ? "Identifiant inconnu ou mot de passe incorrect."
         : 'Connexion refusée : ' + (err.message || err.code);
     });
   });
