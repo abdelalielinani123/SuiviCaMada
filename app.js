@@ -860,16 +860,30 @@ async function handleJsonImportFile(file){
     });
     const allDates = ['entrant','sortant','mails','rtt'].flatMap(k=>revived[k].map(r=>r.date)).sort((a,b)=>a-b);
     const period = allDates.length ? `${dateKey(allDates[0])} → ${dateKey(allDates[allDates.length-1])}` : '—';
-    if (statusEl) statusEl.textContent = `${file.name} — ${totalRows} lignes (JSON)`;
-    STATE.importLog.unshift({file:file.name, type:'Import JSON (sauvegarde)', count:totalRows, period, status:'OK'});
+    if (statusEl) statusEl.textContent = `${file.name} — ${totalRows} lignes lues, synchronisation…`;
+    STATE.importLog.unshift({file:file.name, type:'Import JSON (sauvegarde)', count:totalRows, period, status:'OK (lecture)'});
     updateImportLogTable();
     updateLastUpdateMeta();
     refreshDashboard();
+    // Synchronisation Firestore SOURCE PAR SOURCE, en séquence (pas en parallèle "fire and forget") :
+    // sur un gros import (ex. plusieurs milliers de lignes "entrant"), ça prend nettement plus de temps
+    // que les petites sources (sortant/mails/rtt) — les faire en séquence avec un statut affiché à
+    // chaque étape évite de croire l'import terminé alors qu'une source (souvent la plus grosse) est
+    // encore en train de s'écrire en arrière-plan.
     if (window.syncImportToFirestore){
-      ['entrant','sortant','mails','rtt'].forEach(k=>{
-        if (revived[k].length) window.syncImportToFirestore(k, revived[k], file.name);
-      });
+      const labels = {entrant:'appels entrants', sortant:'appels sortants', mails:'mails', rtt:'RTT'};
+      for (const k of ['entrant','sortant','mails','rtt']){
+        if (!revived[k].length) continue;
+        if (statusEl) statusEl.textContent = `${file.name} — synchronisation ${labels[k]} (${revived[k].length} lignes)…`;
+        try{
+          await window.syncImportToFirestore(k, revived[k], file.name);
+        }catch(e){
+          console.error(`Synchronisation Firestore échouée pour la source "${k}" (import JSON)`, e);
+          if (statusEl) statusEl.textContent = `Erreur de synchronisation sur "${labels[k]}" (voir console) — les autres sources ont pu être synchronisées.`;
+        }
+      }
     }
+    if (statusEl) statusEl.textContent = `${file.name} — ${totalRows} lignes synchronisées ✓`;
     if (window.logImportHistory) window.logImportHistory({ fileName:file.name, type:'json', counts, totalRows, period });
   }catch(e){
     console.error(e);
