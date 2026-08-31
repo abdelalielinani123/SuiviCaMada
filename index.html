@@ -3,437 +3,2979 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard Productivité &amp; CA Horaire — Mada</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<title>Dashboard CA — TERSEA Auchan</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<!-- ============================================================
+     FIREBASE — même projet que le dashboard Qualité (suiviqualitemada),
+     collection Firestore séparée ("dashboard_ca") pour ne pas mélanger
+     les données. La clé API Firebase n'a rien de secret ici : la
+     sécurité réelle repose sur les règles Firestore (firestore.rules),
+     pas sur le fait de la cacher.
+     ============================================================ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCwQkHcJLFn8z0cw1gBYUmZpW7VRs5dGAc",
+    authDomain: "suiviqualitemada.firebaseapp.com",
+    projectId: "suiviqualitemada",
+    storageBucket: "suiviqualitemada.firebasestorage.app",
+    messagingSenderId: "51800223156",
+    appId: "1:51800223156:web:49a541a49bc7976d8e16e1"
+  };
+
+  window.__firebaseConfigured = true;
+  try {
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    window.__fb = { db, doc, getDoc, setDoc, deleteDoc, onSnapshot };
+    signInAnonymously(auth)
+      .then(() => { window.__firebaseReady = true; })
+      .catch((e) => { window.__firebaseError = e.message; window.__firebaseReady = true; });
+  } catch (e) {
+    window.__firebaseError = e.message;
+    window.__firebaseReady = true;
+  }
+</script>
+<script>
+  // Filet de sécurité : si le script Firebase ci-dessus est bloqué avant même
+  // de s'exécuter (réseau restreint, bloqueur de scripts...), les imports ES
+  // échouent et AUCUNE ligne du <script type="module"> ne s'exécute — donc
+  // window.__firebaseReady ne serait jamais positionné et l'appli resterait
+  // bloquée en attente pendant plusieurs dizaines de secondes. Ce filet
+  // force le déblocage après 4s pour basculer proprement sur le stockage local.
+  setTimeout(function(){
+    if(!window.__firebaseReady){
+      if(typeof window.__firebaseConfigured === 'undefined') window.__firebaseConfigured = true;
+      window.__firebaseError = window.__firebaseError || 'Chargement Firebase échoué ou bloqué (réseau)';
+      window.__firebaseReady = true;
+    }
+  }, 4000);
+</script>
+
 <style>
 :root{
-  --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#FAFBFC; --border:#E3E6EB;
-  --text:#101828; --text-2:#475467; --muted:#8A94A6;
-  --brand:#2554C7; --brand-ink:#1D4ED8; --brand-soft:#EAF1FD;
-  --cat-mail:#3B6FD4; --cat-in:#E28C2E; --cat-out:#8B5CF6;
-  --seq-1:#EAF1FD; --seq-2:#B7CDF7; --seq-3:#5D8CE8; --seq-4:#1D4ED8; --seq-5:#123A93;
-  --good:#16A34A; --warn:#D97706; --crit:#DC2626;
-  --shadow:0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
-  --radius:12px;
-}
-[data-theme="dark"]{
-  --bg:#0B0F19; --surface:#111826; --surface-2:#0E1420; --border:#232B3D;
-  --text:#F2F4F7; --text-2:#B4BCCB; --muted:#6B7690;
-  --brand:#5B8DEF; --brand-ink:#7AA2F7; --brand-soft:#16223B;
-  --cat-mail:#6C9BF2; --cat-in:#F0A94E; --cat-out:#B08CF5;
-  --seq-1:#16223B; --seq-2:#1F3562; --seq-3:#2E4F94; --seq-4:#5B8DEF; --seq-5:#A9C4FA;
-  --good:#3FBE6B; --warn:#F0A94E; --crit:#F0616B;
-  --shadow:0 1px 2px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.4);
+  --navy:#1b2b4a;
+  --navy-2:#203864;
+  --blue:#3b6ea5;
+  --ink:#1c2430;
+  --paper:#f7f8fa;
+  --line:#dde2ea;
+  --accent:#c8622a;
+  --green:#2f7a4f;
+  --amber:#c98a12;
+  --white:#ffffff;
+  --mono:'SF Mono',Consolas,monospace;
 }
 *{box-sizing:border-box;}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);transition:background .2s,color .2s;}
-header.top{display:flex;align-items:center;gap:14px;padding:14px 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;}
-header.top .brandmark{display:flex;align-items:center;gap:10px;}
-header.top .brandmark .dot{width:10px;height:10px;border-radius:50%;background:var(--brand);}
-header.top h1{font-size:16px;margin:0;font-weight:650;}
-header.top .badge{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--brand-ink);background:var(--brand-soft);padding:3px 9px;border-radius:20px;}
-header.top .spacer{flex:1;}
-header.top .meta{font-size:12px;color:var(--muted);}
-button.iconbtn{border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;}
-button.iconbtn:hover{background:var(--surface-2);}
-nav.tabs{display:flex;gap:4px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;}
-nav.tabs button{border:none;background:none;padding:13px 16px;font-size:13.5px;font-weight:600;color:var(--text-2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
-nav.tabs button.active{color:var(--brand-ink);border-bottom-color:var(--brand);}
-main{padding:22px 24px 60px;max-width:1360px;margin:0 auto;}
-.tabpanel{display:none;}
-.tabpanel.active{display:block;}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
-.section-title{font-size:14px;font-weight:700;margin:0 0 12px;color:var(--text);}
-.section-sub{font-size:12.5px;color:var(--muted);margin:-6px 0 14px;}
-/* Import tab */
-.dropgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
-.dropzone{display:block;border:1.5px dashed var(--border);border-radius:var(--radius);padding:20px 14px;text-align:center;background:var(--surface);cursor:pointer;transition:border-color .15s,background .15s;}
-.dropzone.drag{border-color:var(--brand);background:var(--brand-soft);}
-.dropzone .ico{font-size:22px;margin-bottom:6px;}
-.dropzone h3{font-size:13px;margin:0 0 4px;}
-.dropzone p{font-size:11.5px;color:var(--muted);margin:0 0 10px;}
-.dropzone .browsebtn{display:inline-block;background:var(--brand);color:#fff;font-size:12px;font-weight:650;padding:7px 14px;border-radius:8px;margin-bottom:10px;}
-.dropzone:hover .browsebtn{opacity:.9;}
-.dropzone .status{font-size:12px;font-weight:600;color:var(--good);min-height:16px;}
-.dropzone .status.empty{color:var(--muted);font-weight:400;}
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:var(--paper);
+  color:var(--ink);
+}
+.app{max-width:1280px;margin:0 auto;padding:0 24px 60px;}
+header.top{
+  background:linear-gradient(135deg,var(--navy) 0%, var(--navy-2) 60%, var(--blue) 100%);
+  color:#fff; padding:28px 24px 22px; margin-bottom:0;
+}
+header.top .inner{max-width:1280px;margin:0 auto;}
+header.top h1{margin:0 0 4px;font-size:22px;letter-spacing:.2px;font-weight:700;}
+header.top p{margin:0;font-size:12.5px;opacity:.82;}
+nav.tabs{
+  display:flex; gap:2px; background:var(--white); border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:20; max-width:1280px; margin:0 auto;
+  padding:0 24px;
+}
+nav.tabs button{
+  border:none;background:transparent;padding:14px 18px;font-size:13.5px;font-weight:600;
+  color:#6b7688;cursor:pointer;border-bottom:3px solid transparent;transition:.15s;
+}
+nav.tabs button:hover{color:var(--navy-2);}
+nav.tabs button.active{color:var(--navy-2);border-bottom-color:var(--accent);}
+section.panel{display:none;padding-top:24px;}
+section.panel.active{display:block;}
+
+.grid{display:grid;gap:16px;}
+.cols-3{grid-template-columns:repeat(3,1fr);}
+.cols-2{grid-template-columns:repeat(2,1fr);}
+.cols-4{grid-template-columns:repeat(4,1fr);}
+@media (max-width:900px){.cols-3,.cols-2,.cols-4{grid-template-columns:1fr;}}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 20px;}
+.card h3{margin:0 0 4px;font-size:14px;color:var(--navy-2);}
+.card .hint{font-size:11.5px;color:#8993a4;margin-bottom:12px;}
+
+.dropzone{
+  border:1.5px dashed #b7c1d4;border-radius:8px;padding:16px;text-align:center;
+  cursor:pointer;background:#fafbfd;transition:.15s;
+}
+.dropzone:hover{border-color:var(--blue);background:#f1f5fb;}
 .dropzone input{display:none;}
-.toolbar{display:flex;gap:10px;margin:16px 0 4px;flex-wrap:wrap;align-items:center;}
-/* Referentiels */
-.subtabs{display:flex;gap:6px;margin-bottom:14px;}
-.subtabs button{border:1px solid var(--border);background:var(--surface);padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text-2);cursor:pointer;}
-.subtabs button.active{background:var(--brand);color:#fff;border-color:var(--brand);}
-.dtabs{display:flex;gap:6px;margin:14px 0;}
-.dtabs button{border:1px solid var(--border);background:var(--surface);padding:7px 14px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text-2);cursor:pointer;}
-.dtabs button.active{background:var(--brand);color:#fff;border-color:var(--brand);}
-input.inline-edit, select.inline-edit, textarea.inline-edit{width:100%;border:1px solid transparent;background:transparent;color:var(--text);font-size:12.5px;padding:5px 6px;border-radius:6px;font-family:inherit;}
-input.inline-edit:hover, select.inline-edit:hover, textarea.inline-edit:hover{border-color:var(--border);background:var(--surface-2);}
-input.inline-edit:focus, select.inline-edit:focus, textarea.inline-edit:focus{outline:none;border-color:var(--brand);background:var(--surface-2);}
-.seg.small button{padding:6px 11px;font-size:12px;}
-.overdue{color:var(--crit) !important;font-weight:700;}
-.statut-badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:650;}
-.statut-badge.st-afaire{background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);}
-.statut-badge.st-encours{background:#EAF1FD;color:#1D4ED8;}
-[data-theme="dark"] .statut-badge.st-encours{background:#16223B;color:#7AA2F7;}
-.statut-badge.st-termine{background:#E7F7ED;color:#15803D;}
-[data-theme="dark"] .statut-badge.st-termine{background:#123A2A;color:#3FBE6B;}
-.statut-badge.st-bloque{background:#FDECEC;color:#B91C1C;}
-[data-theme="dark"] .statut-badge.st-bloque{background:#3A1414;color:#F0616B;}
-table.datatable{width:100%;border-collapse:collapse;font-size:12.5px;}
-table.datatable th{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;background:var(--surface);cursor:pointer;user-select:none;}
-table.datatable td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text);}
-table.datatable tbody tr:hover{background:var(--surface-2);}
-.tablewrap{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px;}
-/* Filters */
-.filterbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 16px;margin-bottom:18px;}
-.filterbar label{font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;}
-.filterbar select, .filterbar input[type=date]{border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12.5px;}
-.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
-.seg button{border:none;background:var(--surface-2);color:var(--text-2);padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;}
-.seg button.active{background:var(--brand);color:#fff;}
-/* KPI grid */
-.kpigrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;}
-.kpi{padding:16px 18px;position:relative;overflow:hidden;}
-.kpi .lbl{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;}
-.kpi .val{font-size:26px;font-weight:750;letter-spacing:-.01em;line-height:1;}
-.kpi .unit{font-size:13px;font-weight:500;color:var(--text-2);margin-left:3px;}
-.kpi .sub{font-size:11.5px;color:var(--muted);margin-top:6px;}
-.kpi .accent{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--brand);}
-.kpi.status-good .accent{background:var(--good);}
-.kpi.status-warn .accent{background:var(--warn);}
-.kpi.status-crit .accent{background:var(--crit);}
-/* charts */
-.chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
-.chartcard{padding:16px 18px;}
-.chartcard .ch-wrap{height:230px;position:relative;}
-.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-2);}
-.legend span.sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
-.warnbox{padding:14px 16px;font-size:12.5px;color:var(--text-2);border-left:3px solid var(--warn);}
-.warnbox h4{margin:0 0 6px;font-size:12.5px;color:var(--warn);}
-.warnbox ul{margin:4px 0 0;padding-left:18px;}
-.pill{display:inline-block;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:11px;color:var(--text-2);margin-right:6px;}
-footer.note{margin-top:30px;font-size:11.5px;color:var(--muted);text-align:center;}
-.emptystate{padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;}
-.grid2{display:grid;grid-template-columns:2fr 1fr;gap:14px;}
-@media (max-width:1000px){.dropgrid{grid-template-columns:repeat(2,1fr);}.kpigrid{grid-template-columns:repeat(2,1fr);}.chartgrid{grid-template-columns:1fr;}.grid2{grid-template-columns:1fr;}}
-@media (max-width:600px){.dropgrid{grid-template-columns:1fr;}.kpigrid{grid-template-columns:1fr;}}
-.btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:650;cursor:pointer;}
-.btn.secondary{background:var(--surface-2);color:var(--text);border:1px solid var(--border);}
-.btn:hover{opacity:.9;}
-.pad{padding:18px;}
-.flexrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-.smallmuted{font-size:11.5px;color:var(--muted);}
+.dropzone .label{font-size:12.5px;font-weight:600;color:var(--navy-2);}
+.dropzone .status{margin-top:6px;font-size:11.5px;color:#8993a4;}
+.dropzone.ok{border-color:var(--green);background:#f1f8f3;}
+.dropzone.ok .status{color:var(--green);font-weight:600;}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+table th{
+  background:var(--navy-2);color:#fff;text-align:left;padding:8px 10px;
+  position:sticky;top:0;font-weight:600;
+}
+table td{padding:6px 10px;border-bottom:1px solid var(--line);}
+table tbody tr:hover{background:#f5f7fb;}
+.table-wrap{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;}
+input[type=text],input[type=number],input[type=date],select{
+  font-family:Arial,sans-serif;font-size:12.5px;padding:6px 8px;border:1px solid var(--line);
+  border-radius:5px;width:100%;background:#fff;color:var(--ink);
+}
+td input{border:1px solid transparent;background:transparent;width:100%;padding:4px 6px;}
+td input:focus{border:1px solid var(--blue);background:#fff;outline:none;}
+.btn{
+  background:var(--navy-2);color:#fff;border:none;border-radius:6px;padding:9px 16px;
+  font-size:12.5px;font-weight:600;cursor:pointer;transition:.15s;
+}
+.btn:hover{background:var(--navy);}
+.btn.secondary{background:#fff;color:var(--navy-2);border:1px solid var(--navy-2);}
+.btn.secondary:hover{background:#eef2f8;}
+.btn.small{padding:5px 10px;font-size:11.5px;}
+.btn.danger{background:#fff;color:#b23b3b;border:1px solid #e2b6b6;}
+.btn.danger:hover{background:#fdf0f0;}
+.row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+
+.kpi{
+  background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;
+  border-top:3px solid var(--accent);
+}
+.kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#8993a4;font-weight:700;}
+.kpi .val{font-size:26px;font-weight:800;color:var(--navy-2);margin:6px 0 2px;}
+.kpi .sub{font-size:11.5px;color:#8993a4;}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;}
+.badge.on{background:#eaf5ee;color:var(--green);}
+.badge.off{background:#f5eaea;color:#a44;}
+.badge.warn{background:#fdf3e3;color:var(--amber);}
+
+.formula-box{
+  background:#fbf6ee;border:1px solid #ecdcbd;border-radius:8px;padding:14px 16px;margin-top:14px;
+}
+.formula-box .flabel{font-size:12px;font-weight:700;color:#8a5c1a;margin-bottom:6px;}
+.formula-box code{background:#fff;padding:2px 6px;border-radius:4px;font-size:11.5px;}
+.dmt-vars{display:flex;gap:20px;margin:10px 0;flex-wrap:wrap;}
+.dmt-vars .v{background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:12px;}
+.dmt-vars .v b{color:var(--navy-2);font-size:14px;}
+
+.footnote{font-size:11px;color:#8993a4;margin-top:8px;}
+.section-title{font-size:15px;font-weight:700;color:var(--navy-2);margin:28px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line);}
+.chart-wrap{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;}
+.chart-wrap canvas{max-height:260px;}
+.empty{padding:40px 20px;text-align:center;color:#8993a4;font-size:13px;}
+textarea{width:100%;min-height:70px;font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:6px;padding:8px;}
+.pill-toggle{display:flex;align-items:center;gap:8px;font-size:12.5px;}
+.pill-toggle input{width:auto;}
+.log{font-family:var(--mono);font-size:11px;background:#111827;color:#c9d1d9;padding:10px 12px;border-radius:8px;max-height:140px;overflow:auto;}
+.log .err{color:#ff8080;}
+.log .ok{color:#7ee787;}
+.login-overlay{
+  position:fixed;inset:0;background:linear-gradient(135deg,var(--navy) 0%, var(--navy-2) 60%, var(--blue) 100%);
+  display:flex;align-items:center;justify-content:center;z-index:100;
+}
+.login-box{background:#fff;border-radius:12px;padding:36px 34px;width:340px;box-shadow:0 20px 50px rgba(0,0,0,.25);}
+.login-box h2{margin:0 0 6px;font-size:18px;color:var(--navy-2);}
+.login-box p{margin:0 0 20px;font-size:12px;color:#8993a4;}
+.login-box label{font-size:12px;font-weight:600;color:var(--navy-2);display:block;margin-bottom:5px;}
+.login-box input{margin-bottom:14px;}
+.login-box .err-msg{color:#b23b3b;font-size:12px;min-height:16px;margin-bottom:6px;}
+.login-box .btn{width:100%;padding:10px;}
 </style>
 </head>
-<body data-theme="light">
+<body>
 
-<div id="authGate" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;">
-  <div class="card pad" style="width:340px;">
-    <div class="section-title">Connexion</div>
-    <div class="section-sub">Connecte-toi avec l'identifiant fourni par ton administrateur pour accéder au dashboard et à l'historique partagé.</div>
-    <div style="margin-bottom:10px;">
-      <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;">Identifiant</label>
-      <input type="text" id="authIdentifiant" autocomplete="username" placeholder="ex : ali" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface-2);color:var(--text);">
-    </div>
-    <div style="margin-bottom:14px;">
-      <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;">Mot de passe</label>
-      <input type="password" id="authPassword" autocomplete="current-password" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface-2);color:var(--text);">
-    </div>
-    <button class="btn" id="btnAuthSubmit" style="width:100%;">Se connecter</button>
-    <div class="smallmuted" id="authError" style="color:var(--crit);margin-top:10px;"></div>
-    <div class="smallmuted" id="authSkip" style="margin-top:14px;text-align:center;cursor:pointer;text-decoration:underline;">Continuer sans Firestore (mode local, non synchronisé)</div>
+<div class="login-overlay" id="login-overlay">
+  <div class="login-box">
+    <h2>Accès Dashboard CA</h2>
+    <p>Identifiant + mot de passe partagés par l'équipe TERSEA.</p>
+    <label for="login-user">Identifiant</label>
+    <input type="text" id="login-user" placeholder="ex : votre prénom">
+    <label for="login-pass">Mot de passe</label>
+    <input type="password" id="login-pass" onkeydown="if(event.key==='Enter') doLogin()">
+    <div class="err-msg" id="login-err"></div>
+    <button class="btn" onclick="doLogin()">Se connecter</button>
   </div>
 </div>
 
-<header class="top">
-  <div class="brandmark"><span class="dot"></span><h1>Productivité &amp; CA Horaire</h1></div>
-  <span class="badge">SITE MADA</span>
-  <div class="spacer"></div>
-  <span class="smallmuted" id="fsStatus"></span>
-  <span class="meta" id="lastUpdateMeta">Aucune donnée chargée</span>
-  <span class="smallmuted" id="authUserBadge" style="display:none;"></span>
-  <button class="iconbtn" id="btnLogout" style="display:none;">Déconnexion</button>
-  <button class="iconbtn" id="btnShowLogin">Se connecter</button>
-  <button class="iconbtn" id="themeToggle" title="Thème clair / sombre">🌙 Sombre</button>
+<script>
+const PASSWORD_HASH = "c9290b0512117d76c0afd30611321a8c12a4d9ad816a6677eb85abe3b1953d7f"; // sha-256 du mot de passe partagé
+async function sha256(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function doLogin(){
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-err');
+  if(!user){ errEl.textContent = "Merci d'indiquer un identifiant."; return; }
+  const hash = await sha256(pass);
+  if(hash === PASSWORD_HASH){
+    sessionStorage.setItem('dashca_auth_user', user);
+    unlockApp();
+  } else {
+    errEl.textContent = "Mot de passe incorrect.";
+  }
+}
+function unlockApp(){
+  document.getElementById('login-overlay').style.display='none';
+  document.querySelectorAll('.app-content').forEach(el=> el.style.display='');
+  const u = sessionStorage.getItem('dashca_auth_user');
+  const badge = document.getElementById('logged-user');
+  if(badge && u) badge.textContent = 'Connecté : '+u;
+}
+if(sessionStorage.getItem('dashca_auth_user')){
+  window.addEventListener('DOMContentLoaded', unlockApp);
+}
+</script>
+
+<header class="top app-content" style="display:none;">
+  <div class="inner">
+    <h1>Dashboard Chiffre d'Affaires — TERSEA / Auchan</h1>
+    <p>Import des extractions, grille tarifaire modifiable, calcul du CA par site et par activité</p>
+    <p id="logged-user" style="margin-top:6px;font-size:11px;opacity:.75;"></p>
+    <p id="db-status" style="margin-top:2px;font-size:11px;opacity:.75;">Base de données : connexion…</p>
+    <p style="margin-top:2px;font-size:10px;opacity:.5;">Version du fichier : 2026-08-31-r10 (nouvel onglet Coprod : Prévu/Reçu/Traité/QP/QS/QS115)</p>
+  </div>
 </header>
 
-<nav class="tabs">
-  <button data-tab="import" class="active">1. Import</button>
-  <button data-tab="ref">2. Référentiels</button>
-  <button data-tab="dash">3. Dashboard</button>
-  <button data-tab="plan">4. Plan d'action</button>
-  <button data-tab="hist">5. Historique</button>
+
+<nav class="tabs app-content" style="display:none;">
+  <button class="tab-btn active" data-tab="import">1. Import des fichiers</button>
+  <button class="tab-btn" data-tab="tarifs">2. Grille tarifaire</button>
+  <button class="tab-btn" data-tab="equipes">3. Répartition équipes</button>
+  <button class="tab-btn" data-tab="dashboard">4. Dashboard</button>
+  <button class="tab-btn" data-tab="historique">5. Historique</button>
+  <button class="tab-btn" data-tab="coprod">6. Coprod</button>
+  <button class="tab-btn" data-tab="reporting">7. Reporting</button>
+  <button class="tab-btn" data-tab="glossaire">8. Glossaire KPI</button>
 </nav>
 
-<main>
+<div class="app app-content" style="display:none;">
 
-  <!-- ================= TAB IMPORT ================= -->
-  <section class="tabpanel active" id="tab-import">
-    <div class="card pad">
-      <div class="section-title">Import des données d'exploitation</div>
-      <div class="section-sub">Dépose les exports du jour (ou de la période) — formats .xls (export HTML Vonage) acceptés. Les fichiers s'ajoutent aux données déjà en mémoire.</div>
-      <div class="dropgrid">
-        <label class="dropzone" data-key="entrant" for="input-entrant">
-          <div class="ico">📞</div><h3>Appels entrants</h3><p>Export « Appel entrant »</p>
-          <span class="browsebtn">Choisir un fichier…</span>
-          <div class="status empty" id="status-entrant">Aucun fichier</div>
-          <input type="file" id="input-entrant" accept=".xls,.xlsx,.html,.htm" data-key="entrant">
-        </label>
-        <label class="dropzone" data-key="sortant" for="input-sortant">
-          <div class="ico">📱</div><h3>Appels sortants</h3><p>Export « Appel sortant »</p>
-          <span class="browsebtn">Choisir un fichier…</span>
-          <div class="status empty" id="status-sortant">Aucun fichier</div>
-          <input type="file" id="input-sortant" accept=".xls,.xlsx,.html,.htm" data-key="sortant">
-        </label>
-        <label class="dropzone" data-key="mails" for="input-mails">
-          <div class="ico">✉️</div><h3>Mails traités</h3><p>Export « mails traités »</p>
-          <span class="browsebtn">Choisir un fichier…</span>
-          <div class="status empty" id="status-mails">Aucun fichier</div>
-          <input type="file" id="input-mails" accept=".xls,.xlsx,.html,.htm" data-key="mails">
-        </label>
-        <label class="dropzone" data-key="rtt" for="input-rtt">
-          <div class="ico">🕒</div><h3>Temps de log (RTT)</h3><p>Export « RTT / Agent Summary »</p>
-          <span class="browsebtn">Choisir un fichier…</span>
-          <div class="status empty" id="status-rtt">Aucun fichier</div>
-          <input type="file" id="input-rtt" accept=".xls,.xlsx,.html,.htm" data-key="rtt">
-        </label>
+  <!-- ===================== 1. IMPORT ===================== -->
+  <section class="panel active" id="panel-import">
+    <div class="section-title">Import via JSON (recommandé)</div>
+    <div class="grid cols-3" style="margin-bottom:18px;">
+      <div class="card" style="grid-column: span 2;">
+        <h3>Fichier JSON consolidé</h3>
+        <div class="hint">Un seul fichier <code>{"entrants":[...], "sortants":[...], "mails":[...]}</code> — mêmes en-têtes de colonnes que les extractions Excel ci-dessous. Remplace le dépôt manuel des 3 fichiers Excel.</div>
+        <div class="dropzone" id="dz-json" onclick="document.getElementById('f-json').click()">
+          <input type="file" id="f-json" accept=".json">
+          <div class="label">Cliquer ou déposer le fichier .json</div>
+          <div class="status" id="st-json">Aucun fichier chargé</div>
+        </div>
       </div>
-      <div class="toolbar">
-        <button class="btn secondary" id="btnResetData">Réinitialiser les données importées</button>
-        <span class="smallmuted" id="importSummary"></span>
+      <div class="card">
+        <h3>Modèle JSON</h3>
+        <div class="hint">Télécharge un exemple avec les bons en-têtes de colonnes, à donner à Claude pour synchroniser vos extractions brutes (appels entrants/sortants, mails...) vers ce format.</div>
+        <button class="btn small secondary" onclick="downloadJsonTemplate()">⬇ Télécharger le modèle</button>
       </div>
     </div>
 
-    <div class="card pad" style="margin-top:16px;">
-      <div class="section-title">Sauvegarde / import JSON (fichier unique)</div>
-      <div class="section-sub">Exporte en un seul fichier .json toutes les données actuellement en mémoire (appels entrants/sortants, mails, RTT) pour les sauvegarder ou les transférer — puis réinjecte ce même fichier ici plus tard pour retrouver exactement ces données.</div>
-      <div class="flexrow">
-        <button class="btn secondary" id="btnExportJson">⬇️ Exporter les données en JSON</button>
-        <label class="btn secondary" style="cursor:pointer;">📥 Importer un fichier JSON…<input type="file" id="input-json" accept=".json" style="display:none;"></label>
-        <span class="smallmuted status empty" id="status-json">Aucun fichier</span>
+    <div class="section-title">Fichiers d'extraction — import manuel (alternative)</div>
+    <div class="grid cols-3">
+      <div class="card">
+        <h3>Appels entrants</h3>
+        <div class="hint">Colonnes attendues : Nom de la file d'attente, Agent: Nom complet, Date de création</div>
+        <div class="dropzone" id="dz-entrants" onclick="document.getElementById('f-entrants').click()">
+          <input type="file" id="f-entrants" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-entrants">Aucun fichier chargé</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Appels sortants</h3>
+        <div class="hint">Colonnes attendues : Agent: Nom complet, Répondu, After Call Work Time, Durée totale de l'appel</div>
+        <div class="dropzone" id="dz-sortants" onclick="document.getElementById('f-sortants').click()">
+          <input type="file" id="f-sortants" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-sortants">Aucun fichier chargé</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Mails</h3>
+        <div class="hint">Colonnes attendues : Conseiller: Nom complet, Date du message. Les lignes dont la dernière colonne = 0 sont exclues.</div>
+        <div class="dropzone" id="dz-mails" onclick="document.getElementById('f-mails').click()">
+          <input type="file" id="f-mails" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-mails">Aucun fichier chargé</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Répartition des équipes</h3>
+        <div class="hint">Fichier avec feuilles "Lot Unique" et "SAV" (Site, Agent)</div>
+        <div class="dropzone" id="dz-repartition" onclick="document.getElementById('f-repartition').click()">
+          <input type="file" id="f-repartition" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-repartition">Aucun fichier chargé</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Répartition des actes par flux</h3>
+        <div class="hint">Correspondance Nom de la file d'attente → Type d'acte</div>
+        <div class="dropzone" id="dz-flux" onclick="document.getElementById('f-flux').click()">
+          <input type="file" id="f-flux" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-flux">Aucun fichier chargé</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>RTT / temps de connexion</h3>
+        <div class="hint">Export "Vonage Agent Summary" — alimente l'onglet Reporting (heures de log, disponibilité, retrait, panier, pause, brief).</div>
+        <div class="dropzone" id="dz-rtt" onclick="document.getElementById('f-rtt').click()">
+          <input type="file" id="f-rtt" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-rtt">Aucun fichier chargé</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Options de traitement</h3>
+        <div class="pill-toggle" style="margin-bottom:10px;">
+          <input type="checkbox" id="opt-exclude-short" checked>
+          <label for="opt-exclude-short">Exclure les appels sortants &lt;</label>
+          <input type="number" id="opt-short-threshold" value="30" style="width:60px;" min="0"> sec
+        </div>
+        <div class="pill-toggle">
+          <input type="checkbox" id="opt-mail-mutualise" checked>
+          <label for="opt-mail-mutualise">Mutualisation : mails équipe SAV → LOT UNIQUE</label>
+        </div>
+        <div class="footnote">Ces règles reproduisent la logique métier validée (voir historique). Modifiable ici.</div>
       </div>
     </div>
 
-    <div class="card pad" style="margin-top:16px;">
-      <div class="section-title">Journal d'import</div>
-      <div class="tablewrap"><table class="datatable" id="importLogTable">
-        <thead><tr><th>Fichier</th><th>Type</th><th>Lignes lues</th><th>Période détectée</th><th>Statut</th></tr></thead>
-        <tbody><tr><td colspan="5" class="emptystate">Aucun import pour le moment</td></tr></tbody>
-      </table></div>
+    <div class="row-actions" style="margin-top:20px;">
+      <button class="btn" onclick="runCalculation()">▶ Lancer le calcul</button>
+      <button class="btn secondary" onclick="clearAllFiles()">Réinitialiser (fichiers + données sauvegardées)</button>
+      <span id="calc-status" style="font-size:12.5px;color:#8993a4;"></span>
     </div>
+    <div class="log" id="log" style="margin-top:14px;"></div>
 
-    <div class="card pad" style="margin-top:16px;">
-      <div class="section-title">Historique des imports (base de données)</div>
-      <div class="section-sub">Historique complet, partagé entre tous les appareils et sessions, conservé dans Firestore — connecte-toi pour y accéder.</div>
-      <div class="tablewrap"><table class="datatable" id="tableImportHistory">
-        <thead><tr><th>Fichier</th><th>Type</th><th>Lignes</th><th>Période</th><th>Importé par</th><th>Importé le</th></tr></thead>
-        <tbody><tr><td colspan="6" class="emptystate">Connecte-toi pour voir l'historique des imports</td></tr></tbody>
-      </table></div>
-    </div>
-  </section>
-
-  <!-- ================= TAB REFERENTIELS ================= -->
-  <section class="tabpanel" id="tab-ref">
-    <div class="card pad">
-      <div class="section-title">Référentiels de calcul</div>
-      <div class="section-sub">Pré-remplis à partir des référentiels Mada fournis. Importe un nouveau fichier pour les mettre à jour — tant qu'aucun fichier n'est importé, les valeurs par défaut ci-dessous sont utilisées.</div>
-      <div class="subtabs">
-        <button class="subtab active" data-sub="flux">Référentiel flux → type d'acte</button>
-        <button class="subtab" data-sub="equipes">Répartition équipes (Mada)</button>
-        <button class="subtab" data-sub="tarifs">Grille tarifaire</button>
-      </div>
-
-      <div class="subpanel active" id="sub-flux">
-        <div class="flexrow" style="margin-bottom:10px;">
-          <label class="btn secondary" style="cursor:pointer;">Importer Référentiel_flux.xlsx<input type="file" id="fileFlux" accept=".xlsx,.xls" style="display:none;"></label>
-          <button class="btn secondary" id="resetFlux">Valeurs par défaut</button>
-          <span class="smallmuted" id="fluxStatus"></span>
-        </div>
-        <div class="tablewrap"><table class="datatable" id="tableFlux"><thead><tr><th>File d'attente</th><th>Type d'acte</th></tr></thead><tbody></tbody></table></div>
-      </div>
-
-      <div class="subpanel" id="sub-equipes" style="display:none;">
-        <div class="section-sub" style="margin-top:-2px;">Cette liste alimente directement le filtre « Agent » et le filtre « Manager » du Dashboard. Modifie le nom ou le manager d'un agent directement dans le tableau, ajoute un agent manuellement, ou détecte automatiquement ceux présents dans tes imports mais absents d'ici.</div>
-        <div class="flexrow" style="margin-bottom:10px;">
-          <label class="btn secondary" style="cursor:pointer;">Importer Repartition_equipes.xlsx<input type="file" id="fileEquipes" accept=".xlsx,.xls" style="display:none;"></label>
-          <button class="btn secondary" id="btnAddAgent">+ Ajouter un agent</button>
-          <button class="btn secondary" id="btnDetectAgents">Détecter les agents manquants</button>
-          <button class="btn secondary" id="resetEquipes">Valeurs par défaut</button>
-          <span class="smallmuted" id="equipesStatus"></span>
-        </div>
-        <div class="tablewrap"><table class="datatable" id="tableEquipes"><thead><tr><th>Identifiant agent</th><th>Nom</th><th>Manager</th><th>Site</th><th></th></tr></thead><tbody></tbody></table></div>
-      </div>
-
-      <div class="subpanel" id="sub-tarifs" style="display:none;">
-        <div class="flexrow" style="margin-bottom:10px;">
-          <label class="btn secondary" style="cursor:pointer;">Importer Grille_tarifaire.xlsx<input type="file" id="fileTarifs" accept=".xlsx,.xls" style="display:none;"></label>
-          <button class="btn secondary" id="resetTarifs">Valeurs par défaut</button>
-          <span class="smallmuted" id="tarifsStatus"></span>
-        </div>
-        <div class="tablewrap"><table class="datatable" id="tableTarifs"><thead><tr><th>Site</th><th>Activité</th><th>Flux</th><th>Type d'acte</th><th>Prix jour normal (€)</th><th>Prix jour férié (€)</th></tr></thead><tbody></tbody></table></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= TAB DASHBOARD ================= -->
-  <section class="tabpanel" id="tab-dash">
-    <div class="card filterbar" style="flex-direction:column;align-items:stretch;gap:12px;">
-      <div class="flexrow" style="gap:10px;">
-        <span class="smallmuted" style="font-weight:600;">Période rapide :</span>
-        <div class="seg small" id="segPeriodPreset">
-          <button data-p="today">Aujourd'hui</button>
-          <button data-p="yesterday">Hier</button>
-          <button data-p="thisweek">Cette semaine</button>
-          <button data-p="lastweek">Semaine dernière</button>
-          <button data-p="thismonth">Ce mois</button>
-          <button data-p="lastmonth">Mois dernier</button>
+    <div class="section-title" style="margin-top:24px;">Coprod — Prévu / Reçu / Traité (onglet 6. Coprod)</div>
+    <div class="hint" style="margin-bottom:10px;">Dépôts indépendants du calcul CA ci-dessus. Chaque import de "Mails reçus"/"Mails traité" met à jour les jours qu'il couvre sans effacer l'historique des semaines précédentes déjà chargées — vous pouvez déposer un nouvel export chaque semaine.</div>
+    <div class="grid cols-3">
+      <div class="card">
+        <h3>Mails reçus</h3>
+        <div class="hint">Export appels/mails reçus — compte les lignes par jour sur la colonne "Date UTC".</div>
+        <div class="dropzone" id="dz-mails-recus" onclick="document.getElementById('f-mails-recus').click()">
+          <input type="file" id="f-mails-recus" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-mails-recus">Aucun fichier chargé</div>
         </div>
       </div>
-      <div class="flexrow" style="gap:10px;">
-        <div>
-          <label>Regrouper par</label>
-          <div class="seg" id="segGranularite">
-            <button data-g="day" class="active">Jour</button>
-            <button data-g="week">Semaine</button>
-            <button data-g="month">Mois</button>
-          </div>
-        </div>
-        <div><label>Du (période personnalisée)</label><input type="date" id="filterFrom"></div>
-        <div><label>Au</label><input type="date" id="filterTo"></div>
-        <div><label>Manager</label><select id="filterManager"><option value="all">Tous les managers</option></select></div>
-        <div><label>Agent</label><select id="filterAgent"><option value="all">Tous les agents</option></select></div>
-        <div><label>Type d'acte</label>
-          <select id="filterActe">
-            <option value="all">Tous</option>
-            <option value="mail">Mail</option>
-            <option value="in">Appel entrant</option>
-            <option value="out">Appel sortant</option>
-          </select>
-        </div>
-        <div style="align-self:flex-end;"><button class="btn secondary" id="btnClearFilters">Réinitialiser</button></div>
-      </div>
-    </div>
-
-    <div class="dtabs">
-      <button class="dtab active" data-dsub="synthese">Synthèse</button>
-      <button class="dtab" data-dsub="agents">Détail par agent</button>
-    </div>
-
-    <div class="dpanel" id="dsub-synthese">
-      <div class="kpigrid" id="kpiGrid"></div>
-
-      <div class="section-title" style="margin-top:4px;">Répartition du temps de log (RTT)</div>
-      <div class="kpigrid" id="kpiGridRtt"></div>
-
-      <div class="chartgrid">
-        <div class="card chartcard">
-          <div class="section-title">Évolution du CA/H</div>
-          <div class="ch-wrap"><canvas id="chartCaH"></canvas></div>
-        </div>
-        <div class="card chartcard">
-          <div class="section-title">Évolution de la productivité horaire</div>
-          <div class="ch-wrap"><canvas id="chartProd"></canvas></div>
-        </div>
-        <div class="card chartcard">
-          <div class="section-title">Répartition des actes traités</div>
-          <div class="ch-wrap"><canvas id="chartRepartition"></canvas></div>
-        </div>
-        <div class="card chartcard">
-          <div class="section-title">Taux d'occupation — tendance</div>
-          <div class="ch-wrap"><canvas id="chartOccupation"></canvas></div>
+      <div class="card">
+        <h3>Mails traité</h3>
+        <div class="hint">Export mails traités — compte les lignes par jour sur la colonne "Date d'acceptation".</div>
+        <div class="dropzone" id="dz-mails-traite" onclick="document.getElementById('f-mails-traite').click()">
+          <input type="file" id="f-mails-traite" accept=".xls,.xlsx,.csv">
+          <div class="label">Cliquer ou déposer le fichier</div>
+          <div class="status" id="st-mails-traite">Aucun fichier chargé</div>
         </div>
       </div>
-
-      <div class="grid2">
-        <div class="card pad">
-          <div class="section-title">Classement agents</div>
-          <div class="ch-wrap" style="height:320px;"><canvas id="chartAgents"></canvas></div>
+      <div class="card">
+        <h3>Prévu (Capacitaire)</h3>
+        <div class="hint">Fichier "[Tersea] Capacitaire..." exporté en .xlsx — utilise l'onglet "Vision Jour ..." (somme des flux dont le nom contient "Mail").</div>
+        <div class="dropzone" id="dz-prevu" onclick="document.getElementById('f-prevu').click()">
+          <input type="file" id="f-prevu" accept=".xlsx">
+          <div class="label">Cliquer ou déposer le fichier .xlsx</div>
+          <div class="status" id="st-prevu">Aucun fichier chargé</div>
         </div>
-        <div class="card pad" id="warnCard">
-          <div class="section-title">Contrôles qualité de la donnée</div>
-          <div id="warnContent" class="smallmuted">Aucune alerte.</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="dpanel" id="dsub-agents" style="display:none;">
-      <div class="card pad">
-        <div class="flexrow" style="justify-content:space-between;margin-bottom:10px;">
-          <div class="section-title" style="margin:0;">Détail par agent</div>
-          <input type="text" id="agentSearch" placeholder="Rechercher un agent ou un manager…" style="border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12.5px;min-width:260px;">
-        </div>
-        <div class="tablewrap" style="max-height:560px;"><table class="datatable" id="tableAgentDetail">
-          <thead><tr>
-            <th data-k="name">Agent</th><th data-k="manager">Manager</th><th data-k="ca">CA (€)</th><th data-k="log">Temps de log</th>
-            <th data-k="caH">CA/H (€)</th><th data-k="dmt">DMT</th><th data-k="acw">ACW</th>
-            <th data-k="mea">MEA</th><th data-k="actes">Actes</th>
-            <th data-k="nbMail">Mails</th><th data-k="nbIn">Entrants</th><th data-k="nbOut">Sortants</th>
-            <th data-k="prod">Prod./H</th><th data-k="occ">Taux occ.</th>
-            <th data-k="dispo">Disponibilité</th><th data-k="retrait">Retrait</th><th data-k="panier">Panier</th><th data-k="pause">Pause</th><th data-k="brief">Brief</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table></div>
       </div>
     </div>
   </section>
 
-  <!-- ================= TAB PLAN D'ACTION ================= -->
-  <section class="tabpanel" id="tab-plan">
-    <div class="card pad">
-      <div class="section-title">Suivi du plan d'action</div>
-      <div class="section-sub">Actions issues de l'analyse des résultats opérationnels. Synchronisé en temps réel via Firestore — visible et modifiable par toute l'équipe connectée.</div>
-      <div class="flexrow" style="margin-bottom:12px;justify-content:space-between;">
-        <div class="flexrow" style="gap:10px;">
-          <button class="btn" id="btnAddAction">+ Nouvelle action</button>
-          <div class="seg small" id="segPlanFilter">
-            <button data-s="all" class="active">Toutes</button>
-            <button data-s="À faire">À faire</button>
-            <button data-s="En cours">En cours</button>
-            <button data-s="Terminé">Terminé</button>
-            <button data-s="Bloqué">Bloqué</button>
-          </div>
-        </div>
-        <span class="smallmuted" id="planStatus"></span>
-      </div>
-      <div class="tablewrap" style="max-height:600px;"><table class="datatable" id="tablePlanAction">
+  <!-- ===================== 2. GRILLE TARIFAIRE ===================== -->
+  <section class="panel" id="panel-tarifs">
+    <div class="section-title">Grille tarifaire (modifiable)</div>
+    <div class="row-actions">
+      <button class="btn small" onclick="addTarifRow()">+ Ajouter une ligne</button>
+      <button class="btn small secondary" onclick="saveTarifs()">Enregistrer la grille</button>
+      <button class="btn small secondary" onclick="resetTarifs()">Réinitialiser aux valeurs par défaut</button>
+      <span id="tarif-save-status" style="font-size:11.5px;color:var(--green);"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="tarif-table">
         <thead><tr>
-          <th style="min-width:180px;">Constat / Problème</th><th style="min-width:180px;">Action</th><th>Responsable</th>
-          <th>Priorité</th><th>Échéance</th><th>Statut</th><th style="min-width:180px;">Commentaire / suivi</th><th></th>
+          <th>Site</th><th>Activité</th><th>Type d'acte / Unité</th><th>Unité</th>
+          <th>Prix Jour Normal (€)</th><th>Prix Jour Férié (€)</th><th></th>
         </tr></thead>
-        <tbody><tr><td colspan="8" class="emptystate">Connecte-toi (onglet de connexion) pour voir et gérer le plan d'action</td></tr></tbody>
-      </table></div>
+        <tbody id="tarif-body"></tbody>
+      </table>
     </div>
-  </section>
 
-  <!-- ================= TAB HISTORIQUE ================= -->
-  <section class="tabpanel" id="tab-hist">
-    <div class="card pad">
-      <div class="section-title">Historique des périodes</div>
-      <div class="section-sub">Enregistre un instantané des KPI de la période affichée dans le Dashboard. L'historique vit en mémoire pendant la session — exporte-le en JSON pour le conserver et le réimporter plus tard (aucune donnée n'est stockée dans le navigateur).</div>
-      <div class="flexrow" style="margin-bottom:14px;">
-        <button class="btn" id="btnSaveSnapshot">Enregistrer l'instantané affiché</button>
-        <button class="btn secondary" id="btnExportHist">Exporter l'historique (JSON)</button>
-        <label class="btn secondary" style="cursor:pointer;">Importer un historique (JSON)<input type="file" id="fileImportHist" accept=".json" style="display:none;"></label>
-        <button class="btn secondary" id="btnClearHist">Vider l'historique</button>
+    <div class="formula-box">
+      <div class="flabel">⚙ Tarif des appels sortants basé sur la DMT (Durée Moyenne de Traitement)</div>
+      <div class="hint" style="margin-bottom:10px;">
+        La DMT sortante est calculée automatiquement depuis le fichier "Appels sortants" importé (After Call Work Time + Durée totale de l'appel, en respectant le filtre &lt;30s défini dans l'onglet Import).
+        Définissez ici la formule de conversion DMT → Tarif. Variables disponibles : <code>DMT_sec</code> (DMT en secondes), <code>DMT_min</code> (DMT en minutes).
       </div>
-      <div class="tablewrap"><table class="datatable" id="tableHistorique">
-        <thead><tr><th>Enregistré le</th><th>Période</th><th>Granularité</th><th>CA (€)</th><th>Actes</th><th>CA/H (€)</th><th>Prod./H</th><th>Taux occ.</th><th></th></tr></thead>
-        <tbody><tr><td colspan="9" class="emptystate">Aucun instantané enregistré</td></tr></tbody>
-      </table></div>
+      <div class="dmt-vars" id="dmt-vars">
+        <div class="v">DMT Sortant (global) : <b id="dmt-global">—</b></div>
+        <div class="v">Mada : <b id="dmt-mada">—</b></div>
+        <div class="v">Fès : <b id="dmt-fes">—</b></div>
+        <div class="v">Casablanca : <b id="dmt-casa">—</b></div>
+      </div>
+      <label style="font-size:12px;font-weight:600;color:#8a5c1a;">Formule Tarif Sortant (JavaScript) — laisser vide pour utiliser le prix fixe de la grille ci-dessus</label>
+      <textarea id="dmt-formula" placeholder="Ex. : DMT_min * 0.35   (formule à communiquer ultérieurement)"></textarea>
+      <div class="row-actions" style="margin-top:10px;">
+        <button class="btn small" onclick="saveDmtFormula()">Enregistrer la formule</button>
+        <span id="dmt-formula-status" style="font-size:11.5px;color:var(--green);"></span>
+      </div>
+      <div class="footnote" id="dmt-preview">Aucune formule active — la grille tarifaire fixe est utilisée pour les appels sortants.</div>
     </div>
-    <div class="card chartcard" style="margin-top:14px;">
-      <div class="section-title">Tendance CA/H entre instantanés</div>
-      <div class="ch-wrap"><canvas id="chartHistTrend"></canvas></div>
+
+    <div class="section-title" style="margin-top:24px;">Référentiel flux (modifiable)</div>
+    <div class="hint" style="margin-bottom:8px;">Correspondance "Nom de la file d'attente" → "Type d'acte", utilisée pour classer chaque appel/mail entrant. Chargée automatiquement depuis la référence officielle ; modifiable et conservée ici (plus besoin de réimporter le fichier à chaque fois).</div>
+    <div class="row-actions">
+      <button class="btn small" onclick="addFluxRow()">+ Ajouter une ligne</button>
+      <button class="btn small secondary" onclick="saveFluxMap()">Enregistrer le référentiel</button>
+      <button class="btn small secondary" onclick="resetFluxMap()">Réinitialiser aux valeurs par défaut</button>
+      <span id="flux-save-status" style="font-size:11.5px;color:var(--green);"></span>
+      <span id="flux-count" class="footnote"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="flux-table">
+        <thead><tr><th>Nom de la file d'attente</th><th>Type d'acte</th><th></th></tr></thead>
+        <tbody id="flux-body"></tbody>
+      </table>
     </div>
   </section>
 
-  <footer class="note">Dashboard Productivité &amp; CA Horaire — Mada · calculs effectués localement dans le navigateur. Sans connexion Firestore, aucune donnée n'est transmise à un serveur ; une fois connecté, les imports, référentiels et le plan d'action sont synchronisés avec ta base Firestore Tersea.</footer>
-</main>
+  <!-- ===================== 3. REPARTITION EQUIPES ===================== -->
+  <section class="panel" id="panel-equipes">
+    <div class="grid cols-2">
+      <div class="card">
+        <div class="row-actions">
+          <h3 style="margin:0;">Équipe LOT UNIQUE</h3>
+        </div>
+        <div class="row-actions">
+          <button class="btn small" onclick="addAgentRow('lot')">+ Agent</button>
+          <button class="btn small secondary" onclick="saveEquipes()">Enregistrer</button>
+          <span id="lot-count" class="footnote"></span>
+        </div>
+        <div class="table-wrap" style="max-height:520px;">
+          <table><thead><tr><th>Site</th><th>Agent</th><th></th></tr></thead>
+          <tbody id="lot-body"></tbody></table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row-actions">
+          <h3 style="margin:0;">Équipe SAV</h3>
+        </div>
+        <div class="row-actions">
+          <button class="btn small" onclick="addAgentRow('sav')">+ Agent</button>
+          <button class="btn small secondary" onclick="saveEquipes()">Enregistrer</button>
+          <span id="sav-count" class="footnote"></span>
+        </div>
+        <div class="table-wrap" style="max-height:520px;">
+          <table><thead><tr><th>Site</th><th>Agent</th><th></th></tr></thead>
+          <tbody id="sav-body"></tbody></table>
+        </div>
+      </div>
+    </div>
+    <div class="footnote" style="margin-top:10px;">Les agents non trouvés dans ces deux listes sont automatiquement neutralisés (exclus du calcul de CA).</div>
+  </section>
 
-<script src="./app.js?v=5"></script>
-<script src="./firebase-sync.js?v=5"></script>
+  <!-- ===================== 4. DASHBOARD ===================== -->
+  <section class="panel" id="panel-dashboard">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="row-actions">
+        <label style="font-size:12.5px;">Vue
+          <select id="period-mode" style="width:130px;display:inline-block;" onchange="onPeriodModeChange()">
+            <option value="custom">Personnalisée</option>
+            <option value="day">Jour</option>
+            <option value="week">Semaine</option>
+            <option value="month">Mois</option>
+          </select>
+        </label>
+        <label style="font-size:12.5px;" id="ref-date-label">Date de référence
+          <input type="date" id="ref-date" style="width:150px;display:inline-block;" onchange="onRefDateChange()">
+        </label>
+        <label style="font-size:12.5px;" id="custom-range-label">Du
+          <input type="date" id="date-start" style="width:150px;display:inline-block;">
+          Au <input type="date" id="date-end" style="width:150px;display:inline-block;">
+        </label>
+        <label style="font-size:12.5px;">Activité
+          <select id="filter-activite" style="width:140px;display:inline-block;">
+            <option value="">Toutes</option>
+            <option value="LOT UNIQUE">LOT UNIQUE</option>
+            <option value="SAV">SAV</option>
+            <option value="Barcelone">Barcelone</option>
+          </select>
+        </label>
+        <label style="font-size:12.5px;">Site
+          <select id="filter-site" style="width:140px;display:inline-block;">
+            <option value="">Tous</option>
+            <option value="Mada">Mada</option>
+            <option value="Fès">Fès</option>
+            <option value="Casablanca">Casablanca</option>
+          </select>
+        </label>
+        <button class="btn small" onclick="renderDashboard()">Appliquer</button>
+        <button class="btn small secondary" onclick="exportCsv()">Exporter le détail (CSV)</button>
+        <button class="btn small" style="background:var(--green);" onclick="archiveCurrentView()">📦 Archiver cette vue</button>
+      </div>
+      <div class="row-actions" style="margin-bottom:8px;">
+        <span style="font-size:12.5px;font-weight:600;color:#8a5c1a;">
+          Heures Barcelone (saisie manuelle par jour, 30,4344 €/h) — activité "Barcelone"
+        </span>
+        <span class="footnote" id="barcelone-ca-preview" style="margin:0;"></span>
+      </div>
+      <div class="table-wrap" id="barcelone-days-wrap" style="max-height:220px;">
+        <table>
+          <thead><tr>
+            <th>Date</th><th>Mada (14,25 €/h)</th><th>Fès (30,4344 €/h)</th><th>Casablanca (30,4344 €/h)</th><th>CA jour (€)</th>
+          </tr></thead>
+          <tbody id="barcelone-days-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="dashboard-empty" class="empty">Importez les fichiers et lancez le calcul depuis l'onglet "1. Import" pour afficher le dashboard.</div>
+
+    <div id="dashboard-content" style="display:none;">
+      <div class="grid cols-4" style="margin-top:18px;">
+        <div class="kpi"><div class="lbl">CA total</div><div class="val" id="kpi-ca">—</div><div class="sub" id="kpi-ca-sub"></div></div>
+        <div class="kpi"><div class="lbl">CA/H</div><div class="val" id="kpi-ca-h">—</div><div class="sub" id="kpi-ca-h-sub">CA total ÷ heures de log (fichier RTT)</div></div>
+        <div class="kpi"><div class="lbl">Actes facturables</div><div class="val" id="kpi-actes">—</div><div class="sub" id="kpi-actes-sub"></div></div>
+        <div class="kpi"><div class="lbl">DMT sortant</div><div class="val" id="kpi-dmt">—</div><div class="sub" id="kpi-dmt-sub"></div></div>
+      </div>
+      <div class="grid cols-3" style="margin-top:10px;">
+        <div class="kpi"><div class="lbl">Appels entrants</div><div class="val" id="kpi-entrants">—</div><div class="sub">Actes traités (glossaire KPI)</div></div>
+        <div class="kpi"><div class="lbl">Appels sortants</div><div class="val" id="kpi-sortants">—</div><div class="sub">Actes traités (glossaire KPI)</div></div>
+        <div class="kpi"><div class="lbl">Mails traités</div><div class="val" id="kpi-mails">—</div><div class="sub">Actes traités (glossaire KPI)</div></div>
+      </div>
+      <div class="footnote" style="margin-top:-8px;margin-bottom:8px;" id="dmt-filter-note"></div>
+      <div class="footnote" style="margin-bottom:8px;">📅 Les actes du dimanche et des jours fériés légaux français (1er janvier, lundi de Pâques, 1er mai, 8 mai, Ascension, lundi de Pentecôte, 14 juillet, 15 août, Toussaint, Armistice, Noël — 2026) sont automatiquement facturés au tarif "Jour Férié" de la grille tarifaire.</div>
+
+      <div class="grid cols-2" style="margin-top:18px;">
+        <div class="chart-wrap"><canvas id="chart-site"></canvas></div>
+        <div class="chart-wrap"><canvas id="chart-activite"></canvas></div>
+      </div>
+
+      <div class="section-title">Détail par site / activité / type</div>
+      <div class="table-wrap">
+        <table id="detail-table">
+          <thead><tr><th>Site</th><th>Activité</th><th>Type</th><th>Quantité</th><th>CA (€)</th></tr></thead>
+          <tbody id="detail-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 5. HISTORIQUE ===================== -->
+  <section class="panel" id="panel-historique">
+    <div class="section-title">Historique des CA archivés</div>
+    <div class="footnote" style="margin-bottom:14px;">
+      Chaque archive fige le CA calculé pour la vue affichée au moment du clic sur "📦 Archiver cette vue" (période, filtre activité, heures Barcelone inclus). Utile pour garder une trace mensuelle/hebdomadaire même après un recalcul ultérieur.
+    </div>
+    <div id="historique-empty" class="empty">Aucune archive pour le moment. Chaque calcul lancé depuis l'onglet Import est maintenant conservé automatiquement ici — vous pouvez aussi cliquer sur "📦 Archiver cette vue" pour créer une archive avec un libellé personnalisé.</div>
+    <div class="table-wrap" id="historique-wrap" style="display:none;">
+      <table>
+        <thead><tr>
+          <th>Archivé le</th><th>Libellé</th><th>Période</th><th>Activité</th>
+          <th>Actes</th><th>CA (€)</th><th></th>
+        </tr></thead>
+        <tbody id="historique-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== 6. COPROD ===================== -->
+  <section class="panel" id="panel-coprod">
+    <div class="section-title">Coprod — Prévu / Reçu / Traité</div>
+    <div class="footnote" style="margin-bottom:10px;">
+      Prévu = total mails prévus (fichier Capacitaire, onglet "Vision Jour ..."). Reçu = nombre de mails reçus (colonne Date UTC). Traité = nombre de mails traités (colonne Date d'acceptation). QP = Reçu ÷ Prévu. QS = Traité ÷ Reçu. QS / 115% de fiab. = Traité ÷ (115% × Prévu). Déposez les fichiers dans l'onglet "1. Import".
+    </div>
+    <div class="row-actions" style="margin-bottom:10px;gap:14px;align-items:center;">
+      <label style="font-size:12.5px;">Période
+        <select id="coprod-period-mode" style="width:130px;display:inline-block;" onchange="onCoprodPeriodModeChange()">
+          <option value="day">Jour</option>
+          <option value="week" selected>Semaine</option>
+          <option value="month">Mois</option>
+          <option value="quarter">Trimestre</option>
+          <option value="year">Année</option>
+        </select>
+      </label>
+      <label style="font-size:12.5px;" id="coprod-ref-date-label">Date de référence
+        <input type="date" id="coprod-ref-date" style="width:150px;display:inline-block;" onchange="onCoprodRefChange()">
+      </label>
+      <label style="font-size:12.5px;display:none;" id="coprod-ref-month-label">Mois
+        <input type="month" id="coprod-ref-month" style="width:150px;display:inline-block;" onchange="onCoprodRefChange()">
+      </label>
+      <label style="font-size:12.5px;display:none;" id="coprod-ref-quarter-label">Trimestre
+        <select id="coprod-ref-quarter-q" style="width:60px;display:inline-block;" onchange="onCoprodRefChange()">
+          <option value="1">T1</option><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option>
+        </select>
+        <input type="number" id="coprod-ref-quarter-y" style="width:80px;display:inline-block;" onchange="onCoprodRefChange()">
+      </label>
+      <label style="font-size:12.5px;display:none;" id="coprod-ref-year-label">Année
+        <input type="number" id="coprod-ref-year" style="width:90px;display:inline-block;" onchange="onCoprodRefChange()">
+      </label>
+    </div>
+    <div class="footnote" id="coprod-coverage" style="margin-bottom:10px;"></div>
+    <div id="coprod-empty" class="empty">Aucune donnée Coprod pour le moment. Déposez au moins "Mails reçus" et "Mails traité" dans l'onglet "1. Import" (le Prévu est optionnel pour Reçu/Traité, mais nécessaire pour QP et QS/115%).</div>
+    <div class="table-wrap" id="coprod-wrap" style="display:none;">
+      <table id="coprod-table">
+        <thead id="coprod-thead"></thead>
+        <tbody id="coprod-tbody"></tbody>
+      </table>
+    </div>
+    <div class="footnote" id="coprod-prevu-meta" style="margin-top:10px;"></div>
+  </section>
+
+  <!-- ===================== 7. REPORTING ===================== -->
+  <section class="panel" id="panel-reporting">
+    <div class="section-title">Reporting — indicateurs du glossaire KPI</div>
+    <div class="footnote" style="margin-bottom:10px;">
+      Calculé à partir des fichiers chargés dans l'onglet Import (entrants/sortants/mails pour le CA et les actes, RTT pour les heures de log/disponibilité/retrait/panier/pause/brief). Utilisez le filtre Période ci-dessous pour restreindre à un jour, une semaine, un mois ou une plage personnalisée. Taux d'occupation et Taux de transfert restent à "—" : la donnée source n'est pas encore disponible (voir l'onglet Glossaire KPI).
+    </div>
+    <div class="row-actions" style="margin-bottom:10px;gap:14px;align-items:center;">
+      <label style="font-size:12.5px;">Période
+        <select id="reporting-period-mode" style="width:150px;display:inline-block;" onchange="onReportingPeriodModeChange()">
+          <option value="all">Toute la période</option>
+          <option value="day">Jour</option>
+          <option value="week">Semaine</option>
+          <option value="month">Mois</option>
+          <option value="custom">Personnalisée</option>
+        </select>
+      </label>
+      <label style="font-size:12.5px;display:none;" id="reporting-ref-date-label">Date de référence
+        <input type="date" id="reporting-ref-date" style="width:150px;display:inline-block;" onchange="onReportingRefDateChange()">
+      </label>
+      <label style="font-size:12.5px;display:none;" id="reporting-custom-range-label">Du
+        <input type="date" id="reporting-date-start" style="width:150px;display:inline-block;" onchange="refreshAgentReporting()">
+        Au <input type="date" id="reporting-date-end" style="width:150px;display:inline-block;" onchange="refreshAgentReporting()">
+      </label>
+    </div>
+    <div class="footnote" id="reporting-coverage" style="margin-bottom:12px;font-weight:600;"></div>
+    <div class="row-actions view-toggle" style="margin-bottom:10px;">
+      <button class="btn small" data-view="agent" onclick="setReportingView('agent')">Vue Agent</button>
+      <button class="btn small secondary" data-view="activite" onclick="setReportingView('activite')">Vue globale par Activité</button>
+    </div>
+    <div class="row-actions" id="reporting-agent-filters" style="margin-bottom:10px;gap:14px;align-items:center;display:none;">
+      <label style="font-size:12px;font-weight:600;color:var(--navy-2);">Site
+        <select id="reporting-filter-site" onchange="renderReporting()" style="margin-left:6px;"><option value="">Tous les sites</option></select>
+      </label>
+      <label style="font-size:12px;font-weight:600;color:var(--navy-2);">Agent
+        <input type="text" id="reporting-filter-agent" placeholder="Rechercher un agent…" oninput="renderReporting()" style="margin-left:6px;width:220px;">
+      </label>
+      <button class="btn small secondary" onclick="resetReportingFilters()">Réinitialiser les filtres</button>
+      <span class="footnote" id="reporting-filter-count" style="margin:0;"></span>
+    </div>
+    <div id="reporting-empty" class="empty">Aucune donnée pour le moment. Chargez les fichiers dans l'onglet "1. Import" (entrants/sortants/mails + RTT, ou le JSON consolidé) puis lancez le calcul.</div>
+    <div class="table-wrap" id="reporting-wrap" style="display:none;max-height:560px;">
+      <table>
+        <thead id="reporting-thead"></thead>
+        <tbody id="reporting-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== 8. GLOSSAIRE KPI ===================== -->
+  <section class="panel" id="panel-glossaire">
+    <div class="section-title">Glossaire des KPI</div>
+    <div class="footnote" style="margin-bottom:14px;">
+      ✅ = calculé — visible dans l'onglet Reporting (et le Dashboard pour CA/Actes). ⏳ = pas encore calculable avec les exports disponibles.
+      Pour les KPI "RTT" : Taux de retrait utilise directement la colonne "Durée de retrait" fournie par l'export (plutôt que de resommer les sous-catégories pause/brief/réunion/... une à une, plus robuste et moins sujet aux erreurs d'arrondi/valeurs manquantes) — à valider avec vous si une définition différente est attendue.
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th></th><th>KPI</th><th>Source</th><th>Type</th><th>Numérateur</th><th>Dénominateur</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>✅</td><td>CA</td><td>—</td><td>Entier €</td><td>Nombre d'actes traités (Mail, appel sortant, appel entrant) × la grille de facturation</td><td>1</td></tr>
+          <tr><td>✅</td><td>CA/H</td><td>—</td><td>Entier €</td><td>CA de l'agent/activité</td><td>Heures de log (RTT)</td></tr>
+          <tr><td>✅</td><td>Actes traités</td><td>—</td><td>—</td><td>Mails traités + Appels entrants + Appels sortants</td><td>—</td></tr>
+          <tr><td>✅</td><td>Mails traités</td><td>Mails traités</td><td>Nombre</td><td>Nombre de lignes avec le nom du conseiller, marquées traitées</td><td>1</td></tr>
+          <tr><td>✅</td><td>Appels entrants</td><td>Appels entrants</td><td>Nombre</td><td>Nombre de lignes avec le nom du conseiller sur une file mappée</td><td>1</td></tr>
+          <tr><td>✅</td><td>MEA</td><td>Appels entrants</td><td>Entier</td><td>Somme des temps de mise en attente par conseiller</td><td>Appels entrants</td></tr>
+          <tr><td>✅</td><td>ACW</td><td>Appels entrants + sortants</td><td>Entier</td><td>Somme des After Call Work Time par conseiller</td><td>Appels entrants + sortants</td></tr>
+          <tr><td>✅</td><td>Appels sortants</td><td>Appels sortants</td><td>Nombre</td><td>Nombre de lignes avec le nom du conseiller</td><td>1</td></tr>
+          <tr><td>✅</td><td>Heures de log</td><td>RTT</td><td>Entier</td><td>"Durée totale de connexion" par conseiller</td><td>3600 (conversion en heures)</td></tr>
+          <tr><td>✅</td><td>Taux de retrait</td><td>RTT</td><td>Pourcentage</td><td>"Durée de retrait" par conseiller</td><td>Heures de log</td></tr>
+          <tr><td>✅</td><td>Temps de dispo</td><td>RTT</td><td>Pourcentage</td><td>"Temps de dispo" par conseiller</td><td>Heures de log</td></tr>
+          <tr><td>⏳</td><td>Taux d'occupation</td><td>RTT</td><td>Pourcentage</td><td>Temps en communication + après-appel + attente</td><td>Heures de log</td></tr>
+          <tr><td>✅</td><td>Taux panier</td><td>RTT</td><td>Pourcentage</td><td>"Panier" par conseiller</td><td>Heures de log</td></tr>
+          <tr><td>✅</td><td>Taux Pause</td><td>RTT</td><td>Pourcentage</td><td>"Pause cafe" par conseiller</td><td>Heures de log</td></tr>
+          <tr><td>✅</td><td>Taux brief</td><td>RTT</td><td>Pourcentage</td><td>"Brief" par conseiller</td><td>Heures de log</td></tr>
+          <tr><td>✅</td><td>Prod / h</td><td>—</td><td>Entier</td><td>Actes traités</td><td>Heures de log (RTT)</td></tr>
+          <tr><td>⏳</td><td>Taux de transfert</td><td>Taux de transfert</td><td>Pourcentage</td><td>Appels transférés</td><td>Appels traités</td></tr>
+        </tbody>
+      </table>
+      <div class="footnote" style="margin-top:10px;">
+        Taux d'occupation : en attente — la colonne source ("Durée d'appel sortant", au format hh:mm dans l'export RTT) n'a pas été conservée dans le premier import JSON et la formule de conversion doit être validée avec vous avant activation.<br>
+        Taux de transfert : en attente d'un export dédié (non présent dans les fichiers reçus à ce jour).
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* =========================================================================
+   STATE
+========================================================================= */
+const state = {
+  files:{ entrants:null, sortants:null, mails:null, repartition:null, flux:null, rtt:null, mailsRecus:null, mailsTraite:null, prevu:null },
+  raw:{ entrants:[], sortants:[], mails:[], rtt:[], mailsRecus:[], mailsTraite:[] },
+  agentCaStats:{},
+  agentCaStatsByDate:{}, // clé "AGENTKEY|YYYY-MM-DD" -> stats du jour (permet de filtrer le Reporting par période sans re-parser les fichiers)
+  lotUnique:[], sav:[], fluxMap:[],
+  tarifs:[],
+  dmtFormula:'',
+  barceloneHeures:{}, // {periodKey: heures}
+  archives:[],
+  results:[], // {date, site, activite, type, unite, qty, ca}
+  dmt:{global:null, bysite:{}},
+  // Onglet Coprod : Prévu (Google Sheet Capacitaire, onglet "Vision Jour ...") / Reçu (Mails reçus,
+  // colonne Date UTC) / Traité (Mails traité, colonne Date d'acceptation) — chaque import (hebdomadaire)
+  // met à jour ("upsert") uniquement les jours présents dans le fichier déposé, sans effacer l'historique
+  // des semaines précédentes déjà chargées.
+  coprod:{
+    recuByDate:{},    // 'YYYY-MM-DD' -> nombre de mails reçus ce jour
+    traiteByDate:{},  // 'YYYY-MM-DD' -> nombre de mails traités ce jour
+    prevuByDate:{},   // 'YYYY-MM-DD' -> total mails prévus ce jour (somme des flux "...Mail" du fichier Capacitaire)
+    prevuMeta:{flows:[], conflicts:0, sheetsUsed:[], importedAt:null}
+  }
+};
+
+const TARIFS_VERSION = 2; // Incrémenter à chaque mise à jour officielle de la grille tarifaire
+                           // (v2 : férié à 1,5x exact + SAV Actes traités Casa à 3,915€ - juillet 2026)
+const DEFAULT_TARIFS = [
+  ["Fès","LOT UNIQUE","HYPER","Acte",1.2758,1.9137],
+  ["Fès","LOT UNIQUE","C2E","Acte",2.2853,3.42795],
+  ["Fès","LOT UNIQUE","AFR","Acte",1.9303,2.89545],
+  ["Fès","LOT UNIQUE","Drive","Acte",1.9303,2.89545],
+  ["Fès","LOT UNIQUE","Appels sortants","Acte",0.8653,1.29795],
+  ["Fès","LOT UNIQUE","Mails","Acte",1.6862,2.5293],
+  ["Fès","SAV","Actes traités","Acte",0,0],
+  ["Casablanca","LOT UNIQUE","HYPER","Acte",1.2758,1.9137],
+  ["Casablanca","LOT UNIQUE","C2E","Acte",2.2853,3.42795],
+  ["Casablanca","LOT UNIQUE","AFR","Acte",1.9303,2.89545],
+  ["Casablanca","LOT UNIQUE","Drive","Acte",1.9303,2.89545],
+  ["Casablanca","LOT UNIQUE","Appels sortants","Acte",0.8653,1.29795],
+  ["Casablanca","LOT UNIQUE","Mails","Acte",1.6862,2.5293],
+  ["Casablanca","SAV","Actes traités","Acte",2.61,3.915],
+  ["Casablanca","SAV","Appels sortants","Acte",0.8653,1.29795],
+  ["Casablanca","SAV","Mails","Acte",1.6862,2.5293],
+  ["Mada","LOT UNIQUE","HYPER","Acte",0.79,1.185],
+  ["Mada","LOT UNIQUE","C2E","Acte",1.43,2.145],
+  ["Mada","LOT UNIQUE","AFR","Acte",1.20,1.800],
+  ["Mada","LOT UNIQUE","Drive","Acte",0.93,1.395],
+  ["Mada","LOT UNIQUE","Appels sortants","Acte",1.08,1.620],
+  ["Mada","LOT UNIQUE","Mails","Acte",1.54,2.310],
+  ["Mada","SAV","Actes traités","Acte",0,0],
+].map(r=>({site:r[0],activite:r[1],type:r[2],unite:r[3],prixNormal:r[4],prixFerie:r[5]}));
+
+const DEFAULT_FLUX = [
+  ["V AFR Partner 3","AFR"],["V RED Partner 3","AFR"],["V C2E Partner 3","C2E"],
+  ["V DRIVE Partner 3","Drive"],["V HYPER Partner 3","HYPER"],["V FNR Partner 3","HYPER"],
+  ["V SUPER Partner 3","HYPER"],["V QUALITE Partner 3","HYPER"],["V UPROXY Partner 3","HYPER"],
+  ["V THYPER Partner 3","HYPER"],["V SAV Partner 3","SAV"],["V SAVED Partner 3","SAV"],
+  ["V RED SAV Partner 3","SAV"],["SAV Partner 3","SAV"],["V TSAV Partner 3","SAV"],
+  ["V SAV BO Internal","SAV"],["V TSAV Partner 2","SAV"],
+].map(r=>({queue:r[0],type:r[1]}));
+const FLUX_VERSION = 1; // Incrémenter si le référentiel flux officiel change
+
+// Référence officielle "Répartition_equipes.xlsx" (Lot Unique + SAV), transcrite telle quelle
+// (y compris quelques doublons/ID réutilisés présents dans le fichier source).
+const EQUIPES_VERSION = 1; // Incrémenter à chaque mise à jour officielle de la répartition d'équipes
+const DEFAULT_LOT_UNIQUE = [
+  ["CASABLANCA","Samira TER_PST32_558"], ["CASABLANCA","ALI TER_PST32_698"], ["CASABLANCA","ZAKARIA TER_PST32_702"], ["CASABLANCA","ALI TER_PST32_754"],
+  ["CASABLANCA","SAIDA TER_PST32_755"], ["CASABLANCA","AYOUB TER_PST32_756"], ["CASABLANCA","SALIMATA TER_PST32_758"], ["CASABLANCA","JAWAD TER_PST32_761"],
+  ["CASABLANCA","ABDELJALIL TER_PST32_762"], ["CASABLANCA","Taha TER_PST32_786"], ["CASABLANCA","Chaimaa TER_PST32_779"], ["CASABLANCA","Rihane TER_PST32_783"],
+  ["CASABLANCA","Afaf TER_PST32_784"], ["Fes","OTHMANE TER_PST32_580"], ["Fes","IMAD TER_PST32_581"], ["Fes","ZAKARIAE TER_PST32_582"],
+  ["Fes","YACINE TER_PST32_583"], ["Fes","FATIMA TER_PST32_584"], ["Fes","FAHD TER_PST32_585"], ["Fes","RIM TER_PST32_586"],
+  ["Fes","MERYEM TER_PST32_587"], ["Fes","ANAS TER_PST32_588"], ["Fes","NAOUAL TER_PST32_589"], ["Fes","ABDELALI TER_PST32_590"],
+  ["Fes","TARIQ TER_PST32_591"], ["Fes","AZIZA TER_PST32_592"], ["Fes","IMANE TER_PST32_593"], ["Fes","Mereyem TER_PST32_594"],
+  ["Fes","AYOUB TER_PST32_595"], ["Fes","DOUNIA TER_PST32_608"], ["Fes","ZAKARIA TER_PST32_609"], ["Fes","AYMAN TER_PST32_610"],
+  ["Fes","TAHA TER_PST32_611"], ["Fes","SAFAE TER_PST32_612"], ["Fes","KENZA TER_PST32_613"], ["Fes","NASSIM TER_PST32_614"],
+  ["Fes","MAROUANE TER_PST32_615"], ["Fes","ILYAS TER_PST32_616"], ["Fes","OUMAIMA TER_PST32_617"], ["Fes","Chaimae TER_PST32_618"],
+  ["Fes","EL HADJI TER_PST32_619"], ["Fes","MOHAMED TER_PST32_620"], ["Fes","HICHAM TER_PST32_621"], ["Fes","HAFSsA TER_PST32_622"],
+  ["Fes","SIDI TER_PST32_623"], ["Fes","FATIMA TER_PST32_624"], ["Fes","ALI TER_PST32_625"], ["Fes","HIND TER_PST32_637"],
+  ["Fes","GHITA TER_PST32_638"], ["Fes","ISSAM TER_PST32_639"], ["Fes","Adil TER_PST32_685"], ["Fes","Ali TER_PST32_682"],
+  ["Fes","Fatima TER_PST32_689"], ["Fes","Ghita TER_PST32_686"], ["Fes","Loqmane TER_PST32_681"], ["Fes","Omar TER_PST32_680"],
+  ["Fes","Rabab TER_PST32_690"], ["Fes","Rajae TER_PST32_684"], ["Fes","Rokaya TER_PST32_679"], ["Fes","Soufiane TER_PST32_683"],
+  ["Fes","Soukayna TER_PST32_688"], ["Fes","Sanae TER_PST32_687"], ["Fes","MOHAMMED TER_PST32_765"], ["Fes","NAJIB TER_PST32_766"],
+  ["Fes","MOHAMMED TER_PST32_765"], ["Fes","NAJIB TER_PST32_766"], ["Fes","FATIMA TER_PST32_767"], ["Fes","ZAKARIA TER_PST32_768"],
+  ["Fes","ZAKARIAE TER_PST32_769"], ["Fes","HAJAR TER_PST32_770"], ["Fes","RAKI TER_PST32_771"], ["Fes","ASMAE TER_PST32_772"],
+  ["Fes","NAOUFAL TER_PST32_773"], ["Fes","IKRAM TER_PST32_774"], ["Fes","KHADIJA TER_PST32_775"], ["Fes","Gisèle TER_PST32_583"],
+  ["Fes","ILYAS TER_PST32_616"], ["Fes","CHAYMAE TER_PST32_804"], ["FES","Gisèle TER_PST32_583"], ["Mada","Felicia TER_PST32_716"],
+  ["Mada","Rosa TER_PST32_669"], ["Mada","Carine TER_PST32_660"], ["Mada","Rojo TER_PST32_641"], ["Mada","Finaritra TER_PST32_663"],
+  ["Mada","Aina TER_PST32_658"], ["Mada","Huguette TER_PST32_654"], ["Mada","Samoina TER_PST32_652"], ["Mada","Tsiory TER_PST32_644"],
+  ["Mada","AMINATA TER_PST32_704"], ["Mada","HERILALA TER_PST32_705"], ["Mada","ANNA TER_PST32_706"], ["Mada","FEHIZORO TER_PST32_707"],
+  ["Mada","KENNY TER_PST32_708"], ["Mada","ANJANIAINA TER_PST32_709"], ["Mada","MIALITIANA TER_PST32_710"], ["Mada","HARIVOLA TER_PST32_711"],
+  ["Mada","ROMEO TER_PST32_712"], ["Mada","TSITONIAINA TER_PST32_713"], ["Mada","ANGELA TER_PST32_714"], ["Mada","JOELLA TER_PST32_715"],
+  ["Mada","SOLANGE TER_PST32_716"], ["Mada","FITIAVANA TER_PST32_717"], ["Mada","ESTEL TER_PST32_718"], ["Mada","FANOMEZANA TER_PST32_719"],
+  ["Mada","NOMENA TER_PST32_720"], ["Mada","TSIARO TER_PST32_721"], ["Mada","SUZANNE TER_PST32_722"], ["Mada","ANNICK TER_PST32_723"],
+  ["Mada","AINA TER_PST32_724"], ["Mada","LOLA TER_PST32_725"], ["Mada","SABRINETTE TER_PST32_726"], ["Mada","VANESSA TER_PST32_727"],
+  ["Mada","SAMIRAH TER_PST32_728"], ["Mada","ERIC TER_PST32_729"], ["Mada","SAROBIDY TER_PST32_730"], ["Mada","NASANDRATRA TER_PST32_731"],
+  ["Mada","ALEX TER_PST32_732"], ["Mada","NATHANAËL TER_PST32_733"], ["Mada","TOLOTRA TER_PST32_734"], ["Mada","LUCKA TER_PST32_735"],
+  ["Mada","ASHMYHR TER_PST32_736"], ["Mada","DIAMONDRA TER_PST32_737"], ["Mada","HANITRA TER_PST32_738"], ["Mada","VOLANIAINA TER_PST32_739"],
+  ["Mada","BRIAN TER_PST32_740"], ["Mada","RITAH TER_PST32_741"], ["Mada","SOMBINIAINA TER_PST32_742"], ["Mada","ANGELO TER_PST32_743"],
+  ["Mada","FANIRIANTSOA TER_PST32_744"], ["Mada","VIRGINIA TER_PST32_745"], ["Mada","AVOTRA TER_PST32_746"], ["Mada","FANANTENANA TER_PST32_747"],
+  ["Mada","JUDIANNAH TER_PST32_748"], ["Mada","CHRISTIAN TER_PST32_749"], ["Mada","HERY TER_PST32_750"], ["Mada","IBRAMDJEE TER_PST32_751"],
+  ["Mada","MAMPIONONA TER_PST32_752"], ["Mada","Thomas TER_PST32_667"], ["Mada","Mira TER_PST32_656"], ["Mada","Mialy TER_PST32_710"],
+  ["Mada","Elodie TER_PST32_642"], ["Mada","Jacky TER_PST32_647"], ["Mada","Joeca TER_PST32_666"], ["Mada","Nomena TER_PST32_657"],
+  ["Mada","Sarobidy TER_PST32_678"], ["Mada","Seth TER_PST32_711"], ["Mada","Tony TER_PST32_734"], ["Mada","DERA TER_PST32_789"],
+  ["Mada","DIAMONDRA TER_PST32_737"], ["Mada","SYLVIA TER_PST32_791"], ["Mada","MICKAEL TER_PST32_792"], ["Mada","VOLANA TER_PST32_793"],
+  ["Mada","MICHAEL TER_PST32_795"], ["Mada","MURIELLE TER_PST32_796"], ["Mada","MANITRA TER_PST32_797"], ["Mada","MIHANTA TER_PST32_798"],
+  ["Mada","TIAVINA TER_PST32_799"], ["Mada","HARIZO TER_PST32_800"], ["Mada","ANDRY TER_PST32_802"], ["Mada","SONIA TER_PST32_803"],
+  ["CASABLANCA","Houssam TER_PST32_827"], ["CASABLANCA","Ylyas TER_PST32_826"], ["CASABLANCA","Salma TER_PST32_825"], ["CASABLANCA","Youness TER_PST32_824"],
+  ["CASABLANCA","Amine TER_PST32_822"], ["CASABLANCA","Achraf TER_PST32_821"],
+].map(r=>({site:r[0],agent:r[1]}));
+const DEFAULT_SAV = [
+  ["CASABLANCA","Bouchra TER_PST32_209"], ["CASABLANCA","Hanane TER_PST32_382"], ["CASABLANCA","Seydina Ababacar TER_PST32_210"], ["CASABLANCA","Salma TER_PST32_440"],
+  ["CASABLANCA","Asmaa TER_PST32_692"], ["CASABLANCA","Yassine TER_PST32_691"], ["CASABLANCA","Yousra TER_PST32_243"], ["CASABLANCA","Imane TER_PST32_436"],
+  ["CASABLANCA","Kamar TER_PST32_701"], ["CASABLANCA","Ahlam TER_PST32_696"], ["CASABLANCA","Achraf TER_PST32_106"],
+].map(r=>({site:r[0],agent:r[1]}));
+
+/* =========================================================================
+   UTILS
+========================================================================= */
+function log(msg, cls){
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  if(cls) line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function normKey(s){
+  return String(s||'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+function fmtEUR(n){
+  return (n||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €';
+}
+function fmtNum(n){ return (n||0).toLocaleString('fr-FR'); }
+function findCol(row, candidates){
+  const keys = Object.keys(row);
+  for(const cand of candidates){
+    const hit = keys.find(k => normKey(k) === normKey(cand));
+    if(hit) return hit;
+  }
+  for(const cand of candidates){
+    const hit = keys.find(k => normKey(k).includes(normKey(cand)));
+    if(hit) return hit;
+  }
+  return null;
+}
+function parseDate(v){
+  if(v instanceof Date) return v;
+  if(typeof v === 'number'){
+    const d = XLSX.SSF.parse_date_code(v);
+    return new Date(d.y, d.m-1, d.d);
+  }
+  const s = String(v||'').trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+function dateKey(d){
+  if(!d) return null;
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+/* =========================================================================
+   FILE PARSING (SheetJS handles both real xlsx and HTML-table "fake xls")
+========================================================================= */
+function parseHtmlTableRows(htmlText){
+  const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+  const table = doc.querySelector('table');
+  if(!table) return [];
+  const trs = Array.from(table.querySelectorAll('tr'));
+  if(!trs.length) return [];
+  const headerCells = Array.from(trs[0].querySelectorAll('th,td')).map(c=>c.textContent.trim());
+  const rows = [];
+  for(let i=1;i<trs.length;i++){
+    const cells = Array.from(trs[i].querySelectorAll('td,th')).map(c=>c.textContent.trim());
+    if(!cells.length || cells.every(c=>c==='')) continue;
+    const obj = {};
+    headerCells.forEach((h,idx)=> obj[h||('col'+idx)] = cells[idx] !== undefined ? cells[idx] : null);
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function readFileAsRows(file){
+  return new Promise((resolve, reject)=>{
+    // 1) Lecture rapide en texte (UTF-8) pour détecter une signature HTML
+    const sniff = new FileReader();
+    sniff.onload = (ev)=>{
+      const head = String(ev.target.result).slice(0, 2000).toLowerCase();
+      const isHtml = head.includes('<html') || head.includes('<table');
+      if(isHtml){
+        // 2) Relecture complète en ISO-8859-1 (encodage réel des exports NVMCS)
+        const reader2 = new FileReader();
+        reader2.onload = (e2)=>{
+          try{
+            const rows = parseHtmlTableRows(e2.target.result);
+            resolve({sheets:{'Feuille1':rows}, sheetNames:['Feuille1']});
+          }catch(err){ reject(err); }
+        };
+        reader2.onerror = reject;
+        reader2.readAsText(file, 'iso-8859-1');
+      } else {
+        // Fichier binaire réel (xlsx/xls/csv) -> SheetJS
+        const reader3 = new FileReader();
+        reader3.onload = (e3)=>{
+          try{
+            const data = new Uint8Array(e3.target.result);
+            const wb = XLSX.read(data, {type:'array', cellDates:true});
+            const sheetNames = wb.SheetNames;
+            const out = {};
+            sheetNames.forEach(name=>{
+              out[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:null});
+            });
+            resolve({sheets:out, sheetNames});
+          }catch(err){ reject(err); }
+        };
+        reader3.onerror = reject;
+        reader3.readAsArrayBuffer(file);
+      }
+    };
+    sniff.onerror = reject;
+    sniff.readAsText(file.slice(0, 4000), 'utf-8');
+  });
+}
+
+// Lit un fichier .xlsx binaire réel en gardant le classeur SheetJS brut (wb.Sheets), sans le
+// convertir en lignes {header:objet} — nécessaire pour parcourir la grille "Vision Jour ..." du
+// fichier Capacitaire (mise en page libre avec plusieurs blocs, pas un simple tableau ligne1=en-têtes).
+function readWorkbookRaw(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      try{
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, {type:'array', cellDates:true});
+        resolve(wb);
+      }catch(err){ reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Compte, par jour (clé "YYYY-MM-DD"), le nombre de lignes dont la colonne `colName` contient une
+// date exploitable. Utilisé pour Reçu (colonne "Date UTC") et Traité (colonne "Date d'acceptation").
+function countByDateColumn(rows, colName){
+  const counts = {};
+  if(!colName) return counts;
+  rows.forEach(r=>{
+    const dk = dateKey(parseDate(r[colName]));
+    if(!dk) return;
+    counts[dk] = (counts[dk]||0)+1;
+  });
+  return counts;
+}
+
+// Parcourt le classeur Capacitaire pour trouver le(s) onglet(s) "Vision Jour ..." et en extraire,
+// pour chaque flux dont le nom contient "Mail" (Hyper Mail / AFR Mail / Drive Mail...), la ligne
+// "Prévision" avec ses valeurs par date (la ligne d'en-têtes de dates est toujours celle juste
+// au-dessus dans le même bloc). Somme ensuite tous les flux "Mail" par date pour obtenir le Prévu
+// total du jour. Robuste à un ajout/suppression de blocs (pas de numéro de ligne en dur) : on
+// repère les lignes par leur libellé, comme demandé dans le Glossaire KPI ("lignes 40, 47, 54" =
+// Hyper Mail / AFR Mail / Drive Mail dans le fichier fourni le 31/08/2026).
+function parsePrevuWorkbook(wb){
+  const sheetNames = wb.SheetNames.filter(n => /vision\s*jour/i.test(n));
+  const flowDateVal = {}; // flowName -> {dateKey: value}
+  let conflicts = 0;
+  sheetNames.forEach(sheetName=>{
+    const grid = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {header:1, raw:true, defval:null});
+    let lastFlow = null;
+    for(let r=0; r<grid.length; r++){
+      const row = grid[r] || [];
+      const colA = row[0];
+      if(colA !== null && colA !== undefined && String(colA).trim() !== ''){
+        lastFlow = String(colA).replace(/\s+/g,' ').trim();
+      }
+      const colB = row[1];
+      const isPrevisionRow = colB !== null && colB !== undefined && String(colB).trim().toLowerCase() === 'prévision';
+      if(isPrevisionRow && lastFlow && /mail/i.test(lastFlow)){
+        const headerRow = grid[r-1] || [];
+        const maxC = Math.max(headerRow.length, row.length);
+        for(let c=2; c<maxC; c++){
+          const hv = headerRow[c];
+          if(hv === null || hv === undefined) continue;
+          let dObj = null;
+          if(hv instanceof Date) dObj = hv;
+          else if(typeof hv === 'number'){ try{ const d = XLSX.SSF.parse_date_code(hv); dObj = new Date(d.y, d.m-1, d.d); }catch(e){} }
+          if(!dObj) continue;
+          const dk = dateKey(dObj);
+          const raw = row[c];
+          if(raw === null || raw === undefined || raw === '' || raw === '-') continue;
+          const num = Number(raw);
+          if(isNaN(num)) continue;
+          if(!flowDateVal[lastFlow]) flowDateVal[lastFlow] = {};
+          if(flowDateVal[lastFlow][dk] !== undefined){
+            if(flowDateVal[lastFlow][dk] !== num) conflicts++; // valeurs différentes pour le même (flux, jour) -> on garde la première, on compte le conflit
+          } else {
+            flowDateVal[lastFlow][dk] = num;
+          }
+        }
+      }
+    }
+  });
+  const byDate = {};
+  Object.keys(flowDateVal).forEach(flow=>{
+    Object.entries(flowDateVal[flow]).forEach(([dk,val])=>{
+      byDate[dk] = (byDate[dk]||0) + val;
+    });
+  });
+  return {byDate, conflicts, flows:Object.keys(flowDateVal), sheetsUsed:sheetNames};
+}
+
+function setupDropzone(id, inputId, onLoaded){
+  const dz = document.getElementById(id);
+  const input = document.getElementById(inputId);
+  input.addEventListener('change', (e)=>{
+    if(e.target.files[0]) handle(e.target.files[0]);
+  });
+  dz.addEventListener('dragover', e=>{e.preventDefault(); dz.style.borderColor='var(--blue)';});
+  dz.addEventListener('drop', e=>{
+    e.preventDefault();
+    if(e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]);
+  });
+  function handle(file){
+    readFileAsRows(file).then(res=>{
+      onLoaded(res, file);
+    }).catch(err=>{
+      log('Erreur de lecture ('+file.name+') : '+err.message, 'err');
+    });
+  }
+}
+
+/* Import JSON — alternative aux 3 dropzones Excel entrants/sortants/mails :
+   un seul fichier {entrants:[...], sortants:[...], mails:[...]} où chaque
+   tableau contient les lignes brutes avec exactement les mêmes en-têtes de
+   colonnes que les extractions Excel (voir downloadJsonTemplate()). */
+function setupJsonDropzone(id, inputId, onLoaded){
+  const dz = document.getElementById(id);
+  const input = document.getElementById(inputId);
+  input.addEventListener('change', (e)=>{
+    if(e.target.files[0]) handle(e.target.files[0]);
+  });
+  dz.addEventListener('dragover', e=>{e.preventDefault(); dz.style.borderColor='var(--blue)';});
+  dz.addEventListener('drop', e=>{
+    e.preventDefault();
+    if(e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]);
+  });
+  function handle(file){
+    file.text().then(txt=>{
+      let data;
+      try{ data = JSON.parse(txt); }
+      catch(e){ log('JSON invalide ('+file.name+') : '+e.message, 'err'); return; }
+      onLoaded(data, file);
+    }).catch(err=>{
+      log('Erreur de lecture ('+file.name+') : '+err.message, 'err');
+    });
+  }
+}
+function downloadJsonTemplate(){
+  const template = {
+    entrants: [
+      {"Nom de la file d'attente":"V HYPER Partner 3", "Agent: Nom complet":"Samira TER_PST32_558", "Date de création":"2026-08-24"}
+    ],
+    sortants: [
+      {"Agent: Nom complet":"Samira TER_PST32_558", "Date de création":"2026-08-24", "Répondu":1, "After Call Work Time":45, "Durée totale de l'appel":180}
+    ],
+    mails: [
+      {"Conseiller: Nom complet":"Samira TER_PST32_558", "Date du message":"2026-08-24", "Traité":1}
+    ]
+  };
+  const blob = new Blob([JSON.stringify(template, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'modele_import_ca_tersea.json';
+  a.click();
+}
+
+/* =========================================================================
+   INIT DROPZONES
+========================================================================= */
+// Recalcule automatiquement dès qu'au moins un fichier d'actes (entrants/sortants/mails)
+// est chargé, pour que le CA/les actes du Reporting n'exigent jamais un clic manuel sur
+// "Lancer le calcul" — quel que soit le mode d'import (JSON ou fichiers Excel un par un).
+function maybeAutoCalc(){
+  if(state.raw.entrants.length || state.raw.sortants.length || state.raw.mails.length){
+    log('Recalcul automatique en cours…', 'ok');
+    runCalculation();
+  } else {
+    refreshAgentReporting();
+  }
+}
+setupDropzone('dz-entrants','f-entrants',(res,file)=>{
+  const sheet = res.sheets[res.sheetNames[0]];
+  state.raw.entrants = sheet;
+  state.files.entrants = file.name;
+  document.getElementById('dz-entrants').classList.add('ok');
+  document.getElementById('st-entrants').textContent = file.name+' — '+sheet.length+' lignes';
+  log('Appels entrants chargés : '+sheet.length+' lignes', 'ok');
+  maybeAutoCalc();
+});
+setupDropzone('dz-sortants','f-sortants',(res,file)=>{
+  const sheet = res.sheets[res.sheetNames[0]];
+  state.raw.sortants = sheet;
+  state.files.sortants = file.name;
+  document.getElementById('dz-sortants').classList.add('ok');
+  document.getElementById('st-sortants').textContent = file.name+' — '+sheet.length+' lignes';
+  log('Appels sortants chargés : '+sheet.length+' lignes', 'ok');
+  maybeAutoCalc();
+});
+setupDropzone('dz-mails','f-mails',(res,file)=>{
+  const sheet = res.sheets[res.sheetNames[0]];
+  state.raw.mails = sheet;
+  state.files.mails = file.name;
+  document.getElementById('dz-mails').classList.add('ok');
+  document.getElementById('st-mails').textContent = file.name+' — '+sheet.length+' lignes';
+  log('Mails chargés : '+sheet.length+' lignes', 'ok');
+  maybeAutoCalc();
+});
+setupJsonDropzone('dz-json','f-json',(data,file)=>{
+  let parts = [];
+  let hasCallData = false;
+  if(Array.isArray(data.entrants)){
+    state.raw.entrants = data.entrants;
+    state.files.entrants = file.name+' (JSON)';
+    document.getElementById('dz-entrants').classList.add('ok');
+    document.getElementById('st-entrants').textContent = file.name+' — '+data.entrants.length+' lignes (JSON)';
+    parts.push(data.entrants.length+' entrants');
+    hasCallData = true;
+  }
+  if(Array.isArray(data.sortants)){
+    state.raw.sortants = data.sortants;
+    state.files.sortants = file.name+' (JSON)';
+    document.getElementById('dz-sortants').classList.add('ok');
+    document.getElementById('st-sortants').textContent = file.name+' — '+data.sortants.length+' lignes (JSON)';
+    parts.push(data.sortants.length+' sortants');
+    hasCallData = true;
+  }
+  if(Array.isArray(data.mails)){
+    state.raw.mails = data.mails;
+    state.files.mails = file.name+' (JSON)';
+    document.getElementById('dz-mails').classList.add('ok');
+    document.getElementById('st-mails').textContent = file.name+' — '+data.mails.length+' lignes (JSON)';
+    parts.push(data.mails.length+' mails');
+    hasCallData = true;
+  }
+  if(Array.isArray(data.rtt)){
+    state.raw.rtt = data.rtt;
+    state.files.rtt = file.name+' (JSON)';
+    document.getElementById('dz-rtt').classList.add('ok');
+    document.getElementById('st-rtt').textContent = file.name+' — '+data.rtt.length+' lignes (JSON)';
+    parts.push(data.rtt.length+' RTT');
+    storage.set('raw_rtt', JSON.stringify(state.raw.rtt)).catch(()=>{});
+  }
+  if(!parts.length){
+    log('Fichier JSON reconnu mais aucune clé "entrants"/"sortants"/"mails" (tableaux) trouvée.', 'err');
+    return;
+  }
+  document.getElementById('dz-json').classList.add('ok');
+  document.getElementById('st-json').textContent = file.name+' — '+parts.join(', ');
+  if(hasCallData){
+    // Import JSON = import "tout-en-un" : on lance le calcul complet automatiquement
+    // (CA, Dashboard, Historique, ET les données du Reporting par agent/activité qui en
+    // dépendent) au lieu d'attendre un clic séparé sur "Lancer le calcul".
+    log('Import JSON chargé : '+parts.join(', ')+'. Calcul automatique en cours…', 'ok');
+    runCalculation();
+  } else {
+    // JSON contenant uniquement du RTT (mise à jour partielle) : on rafraîchit l'aperçu
+    // Reporting avec les heures de log, mais le CA/les actes par agent restent à 0 tant
+    // qu'un calcul complet (avec entrants/sortants/mails) n'a pas été lancé.
+    log('Import JSON chargé : '+parts.join(', ')+' (RTT seul — CA/actes par agent nécessitent un calcul complet, cliquez sur "▶ Lancer le calcul" une fois les autres fichiers chargés).', 'ok');
+    refreshAgentReporting();
+  }
+});
+setupDropzone('dz-repartition','f-repartition',(res,file)=>{
+  let lotSheet=null, savSheet=null;
+  res.sheetNames.forEach(name=>{
+    const n = normKey(name);
+    if(n.includes('SAV')) savSheet = res.sheets[name];
+    else if(n.includes('LOT')) lotSheet = res.sheets[name];
+  });
+  if(!lotSheet && res.sheetNames.length>=1) lotSheet = res.sheets[res.sheetNames[0]];
+  if(!savSheet && res.sheetNames.length>=2) savSheet = res.sheets[res.sheetNames[1]];
+
+  function extractAgents(rows){
+    if(!rows) return [];
+    const siteCol = findCol(rows[0]||{}, ['Site','site']);
+    const agentCol = findCol(rows[0]||{}, ['Agent','log mail','Agent: Nom complet']);
+    return rows.map(r=>({site: r[siteCol]||'', agent: r[agentCol]||''})).filter(r=>r.agent);
+  }
+  state.lotUnique = extractAgents(lotSheet);
+  state.sav = extractAgents(savSheet);
+  renderEquipes();
+  document.getElementById('dz-repartition').classList.add('ok');
+  document.getElementById('st-repartition').textContent = file.name+' — '+state.lotUnique.length+' Lot Unique / '+state.sav.length+' SAV';
+  log('Répartition chargée : '+state.lotUnique.length+' agents Lot Unique, '+state.sav.length+' agents SAV', 'ok');
+});
+setupDropzone('dz-flux','f-flux',(res,file)=>{
+  const sheet = res.sheets[res.sheetNames[0]];
+  const qCol = findCol(sheet[0]||{}, ["Nom de la file d'attente",'Queue','file']);
+  const tCol = findCol(sheet[0]||{}, ['Actes','Type']);
+  state.fluxMap = sheet.map(r=>({queue:r[qCol], type:r[tCol]})).filter(r=>r.queue);
+  document.getElementById('dz-flux').classList.add('ok');
+  document.getElementById('st-flux').textContent = file.name+' — '+state.fluxMap.length+' correspondances';
+  log('Référentiel flux chargé : '+state.fluxMap.length+' files mappées', 'ok');
+});
+setupDropzone('dz-rtt','f-rtt',(res,file)=>{
+  const sheet = res.sheets[res.sheetNames[0]];
+  state.raw.rtt = sheet;
+  state.files.rtt = file.name;
+  document.getElementById('dz-rtt').classList.add('ok');
+  document.getElementById('st-rtt').textContent = file.name+' — '+sheet.length+' lignes';
+  log('RTT chargé : '+sheet.length+' lignes', 'ok');
+  storage.set('raw_rtt', JSON.stringify(state.raw.rtt)).catch(()=>{});
+  maybeAutoCalc();
+});
+
+/* =========================================================================
+   COPROD — imports Mails reçus / Mails traité / Prévu (Capacitaire)
+========================================================================= */
+async function persistCoprod(){
+  try{
+    await storage.set('coprod_recu', JSON.stringify(state.coprod.recuByDate));
+    await storage.set('coprod_traite', JSON.stringify(state.coprod.traiteByDate));
+    await storage.set('coprod_prevu', JSON.stringify(state.coprod.prevuByDate));
+    await storage.set('coprod_prevu_meta', JSON.stringify(state.coprod.prevuMeta));
+  }catch(e){}
+}
+function refreshCoprodIfVisible(){
+  const btn = document.querySelector('.tab-btn[data-tab="coprod"]');
+  if(btn && btn.classList.contains('active')) renderCoprod();
+}
+setupDropzone('dz-mails-recus','f-mails-recus',(res,file)=>{
+  const sheet = res.sheets[res.sheetNames[0]];
+  state.raw.mailsRecus = sheet;
+  state.files.mailsRecus = file.name;
+  const dateCol = findCol(sheet[0]||{}, ['Date UTC']);
+  const counts = countByDateColumn(sheet, dateCol);
+  Object.assign(state.coprod.recuByDate, counts); // upsert : écrase seulement les jours présents dans ce fichier
+  document.getElementById('dz-mails-recus').classList.add('ok');
+  const jours = Object.keys(counts).sort();
+  document.getElementById('st-mails-recus').textContent = file.name+' — '+sheet.length+' lignes / '+jours.length+' jour(s)'+(jours.length?(' ('+jours[0]+' → '+jours[jours.length-1]+')'):'');
+  log('Mails reçus chargés : '+sheet.length+' lignes sur '+jours.length+' jour(s)'+(dateCol?'':' — ⚠️ colonne "Date UTC" introuvable'), dateCol?'ok':'err');
+  persistCoprod();
+  refreshCoprodIfVisible();
+});
+setupDropzone('dz-mails-traite','f-mails-traite',(res,file)=>{
+  const sheet = res.sheets[res.sheetNames[0]];
+  state.raw.mailsTraite = sheet;
+  state.files.mailsTraite = file.name;
+  const dateCol = findCol(sheet[0]||{}, ["Date d'acceptation"]);
+  const counts = countByDateColumn(sheet, dateCol);
+  Object.assign(state.coprod.traiteByDate, counts);
+  document.getElementById('dz-mails-traite').classList.add('ok');
+  const jours = Object.keys(counts).sort();
+  document.getElementById('st-mails-traite').textContent = file.name+' — '+sheet.length+' lignes / '+jours.length+' jour(s)'+(jours.length?(' ('+jours[0]+' → '+jours[jours.length-1]+')'):'');
+  log('Mails traité chargés : '+sheet.length+' lignes sur '+jours.length+' jour(s)'+(dateCol?'':' — ⚠️ colonne "Date d\'acceptation" introuvable'), dateCol?'ok':'err');
+  persistCoprod();
+  refreshCoprodIfVisible();
+});
+(function(){
+  const dz = document.getElementById('dz-prevu');
+  const input = document.getElementById('f-prevu');
+  function handle(file){
+    readWorkbookRaw(file).then(wb=>{
+      const parsed = parsePrevuWorkbook(wb);
+      if(!parsed.sheetsUsed.length){
+        log('Prévu : aucun onglet "Vision Jour ..." trouvé dans '+file.name, 'err');
+        return;
+      }
+      Object.assign(state.coprod.prevuByDate, parsed.byDate); // upsert
+      state.coprod.prevuMeta = {flows:parsed.flows, conflicts:parsed.conflicts, sheetsUsed:parsed.sheetsUsed, importedAt:new Date().toISOString()};
+      state.files.prevu = file.name;
+      document.getElementById('dz-prevu').classList.add('ok');
+      const nbDates = Object.keys(parsed.byDate).length;
+      document.getElementById('st-prevu').textContent = file.name+' — '+nbDates+' jour(s), flux : '+parsed.flows.join(', ')+(parsed.conflicts?(' — ⚠️ '+parsed.conflicts+' conflit(s) ignoré(s)'):'');
+      log('Prévu importé : '+nbDates+' jour(s), flux : '+parsed.flows.join(', ')+(parsed.conflicts?(' ('+parsed.conflicts+' valeurs en conflit ignorées, voir onglet Coprod)'):''), 'ok');
+      persistCoprod();
+      refreshCoprodIfVisible();
+    }).catch(err=>{
+      log('Erreur de lecture ('+file.name+') : '+err.message, 'err');
+    });
+  }
+  input.addEventListener('change', e=>{ if(e.target.files[0]) handle(e.target.files[0]); });
+  dz.addEventListener('dragover', e=>{e.preventDefault(); dz.style.borderColor='var(--blue)';});
+  dz.addEventListener('drop', e=>{ e.preventDefault(); if(e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]); });
+})();
+
+async function clearAllFiles(){
+  state.raw = {entrants:[], sortants:[], mails:[], rtt:[]};
+  state.files = {entrants:null, sortants:null, mails:null, repartition:null, flux:null, rtt:null};
+  state.results = [];
+  state.agentCaStats = {};
+  state.agentCaStatsByDate = {};
+  state.dmt = {global:null, bysite:{}};
+  document.getElementById('reporting-period-mode').value = 'all';
+  document.getElementById('reporting-ref-date-label').style.display = 'none';
+  document.getElementById('reporting-custom-range-label').style.display = 'none';
+  document.getElementById('reporting-date-start').value = '';
+  document.getElementById('reporting-date-end').value = '';
+  refreshAgentReporting();
+  ['entrants','sortants','mails','repartition','flux','json','rtt'].forEach(k=>{
+    document.getElementById('dz-'+k).classList.remove('ok');
+    document.getElementById('st-'+k).textContent = 'Aucun fichier chargé';
+    document.getElementById('f-'+k).value = '';
+  });
+  document.getElementById('log').innerHTML='';
+  try{
+    await storage.set('last_results', '');
+    await storage.set('last_dmt', '');
+    await storage.set('last_meta', '');
+    await storage.set('agent_ca_stats_by_date', '');
+    await storage.set('raw_rtt', '');
+  }catch(e){}
+  renderDashboard();
+}
+
+/* =========================================================================
+   CLASSIFICATION
+========================================================================= */
+function buildMaps(){
+  const lotMap = {};
+  state.lotUnique.forEach(r=> lotMap[normKey(r.agent)] = String(r.site||'').trim());
+  const savSet = new Set(state.sav.map(r=>normKey(r.agent)));
+  const fluxMap = {};
+  (state.fluxMap.length?state.fluxMap:DEFAULT_FLUX).forEach(r=> fluxMap[normKey(r.queue)] = r.type);
+  return {lotMap, savSet, fluxMap};
+}
+function normSiteName(s){
+  const n = normKey(s);
+  if(n.includes('MADA')) return 'Mada';
+  if(n.includes('FES')) return 'Fès';
+  if(n.includes('CASA')) return 'Casablanca';
+  return s;
+}
+function classifyAgent(agentName, maps){
+  const key = normKey(agentName);
+  if(maps.savSet.has(key)) return {site:'Casablanca', act:'SAV'};
+  if(maps.lotMap[key]) return {site:normSiteName(maps.lotMap[key]), act:'LOT UNIQUE'};
+  return {site:null, act:null};
+}
+
+/* =========================================================================
+   CALCULATION
+========================================================================= */
+function runCalculation(){
+  document.getElementById('log').innerHTML='';
+  if(!state.raw.entrants.length && !state.raw.sortants.length && !state.raw.mails.length){
+    log('Aucun fichier chargé.', 'err');
+    return;
+  }
+  return runCalculationAsync();
+}
+async function runCalculationAsync(){
+  const maps = buildMaps();
+  const excludeShort = document.getElementById('opt-exclude-short').checked;
+  const threshold = Number(document.getElementById('opt-short-threshold').value)||30;
+  const mailMutualise = document.getElementById('opt-mail-mutualise').checked;
+
+  const rows = [];
+
+  if(state.raw.entrants.length){
+    const sample = state.raw.entrants[0];
+    const queueCol = findCol(sample, ["Nom de la file d'attente"]);
+    const agentCol = findCol(sample, ['Agent: Nom complet','Agent']);
+    const dateCol = findCol(sample, ['Date de création','Date']);
+    const meaCol = findCol(sample, ['Durée de mise en attente (consultation)','Durée de mise en attente']);
+    const acwCol = findCol(sample, ['After Call Work Time']);
+    let n_ok=0, n_skip_queue=0, n_skip_site=0;
+    state.raw.entrants.forEach(r=>{
+      const queue = r[queueCol];
+      const fluxType = maps.fluxMap[normKey(queue)];
+      if(!fluxType){ n_skip_queue++; return; }
+      const {site} = classifyAgent(r[agentCol], maps);
+      if(!site){ n_skip_site++; return; }
+      const activite = (fluxType === 'SAV') ? 'SAV' : 'LOT UNIQUE';
+      const type = (fluxType === 'SAV') ? 'Actes traités' : fluxType;
+      rows.push({date:parseDate(r[dateCol]), site, activite, type, agent:r[agentCol],
+        mea:Number(r[meaCol])||0, acw:Number(r[acwCol])||0});
+      n_ok++;
+    });
+    log('Entrants : '+n_ok+' actes retenus, '+n_skip_queue+' file non mappée, '+n_skip_site+' agent non identifié', 'ok');
+  }
+
+  let sortantsDurees = [];
+  if(state.raw.sortants.length){
+    const sample = state.raw.sortants[0];
+    const agentCol = findCol(sample, ['Agent: Nom complet','Agent']);
+    const dateCol = findCol(sample, ['Date de création','Date']);
+    const repCol = findCol(sample, ['Répondu']);
+    const acwCol = findCol(sample, ['After Call Work Time']);
+    const durCol = findCol(sample, ["Durée totale de l'appel",'Durée de communication']);
+    let n_ok=0, n_skip_site=0, n_skip_short=0, n_skip_rep=0;
+    state.raw.sortants.forEach(r=>{
+      if(repCol && Number(r[repCol])!==1){ n_skip_rep++; return; }
+      const duree = (Number(r[acwCol])||0) + (Number(r[durCol])||0);
+      if(excludeShort && duree < threshold){ n_skip_short++; return; }
+      const {site, act} = classifyAgent(r[agentCol], maps);
+      if(site) sortantsDurees.push({site, duree}); // DMT calculée sur les appels retenus (respecte le filtre <30s actif)
+      if(!site){ n_skip_site++; return; }
+      rows.push({date:parseDate(r[dateCol]), site, activite:act, type:'Appels sortants', duree, agent:r[agentCol],
+        mea:0, acw:Number(r[acwCol])||0});
+      n_ok++;
+    });
+    log('Sortants : '+n_ok+' actes retenus, '+n_skip_rep+' non répondus, '+n_skip_short+' <'+threshold+'s exclus, '+n_skip_site+' agent non identifié', 'ok');
+  }
+
+  if(state.raw.mails.length){
+    const sample = state.raw.mails[0];
+    const agentCol = findCol(sample, ['Conseiller: Nom complet','Conseiller']);
+    const dateCol = findCol(sample, ['Date du message','Date']);
+    const lastCol = Object.keys(sample)[Object.keys(sample).length - 1];
+    let n_ok=0, n_skip=0, n_skip_zero=0;
+    state.raw.mails.forEach(r=>{
+      const lastVal = Number(r[lastCol]);
+      if(!isNaN(lastVal) && lastVal === 0){ n_skip_zero++; return; }
+      const {site, act} = classifyAgent(r[agentCol], maps);
+      if(!site){ n_skip++; return; }
+      const activite = mailMutualise ? 'LOT UNIQUE' : act;
+      rows.push({date:parseDate(r[dateCol]), site, activite, type:'Mails', agent:r[agentCol], mea:0, acw:0});
+      n_ok++;
+    });
+    log('Mails : '+n_ok+' actes retenus, '+n_skip_zero+' exclus ('+lastCol+'=0), '+n_skip+' agent non identifié', 'ok');
+  }
+
+  if(sortantsDurees.length){
+    state.dmt.global = sortantsDurees.reduce((a,b)=>a+b.duree,0)/sortantsDurees.length;
+    ['Mada','Fès','Casablanca'].forEach(s=>{
+      const subset = sortantsDurees.filter(d=>d.site===s);
+      state.dmt.bysite[s] = subset.length ? subset.reduce((a,b)=>a+b.duree,0)/subset.length : null;
+    });
+  }
+  updateDmtDisplay();
+  updateDmtPreview();
+
+  const agg = {};
+  rows.forEach(r=>{
+    const dk = dateKey(r.date);
+    const key = [dk, r.site, r.activite, r.type].join('|');
+    if(!agg[key]) agg[key] = {date:dk, site:r.site, activite:r.activite, type:r.type, qty:0};
+    agg[key].qty++;
+  });
+  state.results = Object.values(agg);
+  log('Calcul terminé : '+state.results.length+' lignes agrégées, '+rows.length+' actes au total.', 'ok');
+  document.getElementById('calc-status').textContent = '✓ Calcul effectué — voir l\'onglet Dashboard';
+
+  // Reporting (Vue Agent / Vue Activité) : CA + actes par agent, dérivés des mêmes lignes que le calcul
+  // ci-dessus (garantit que la somme par agent retombe exactement sur le CA total du Dashboard),
+  // mais conservés par jour pour permettre le filtre Jour/Semaine/Mois/Période propre au Reporting.
+  state.agentCaStatsByDate = computeAgentCaStatsByDate(rows);
+  refreshAgentReporting();
+
+  const dates = state.results.map(r=>r.date).filter(Boolean).sort();
+  if(dates.length){
+    document.getElementById('date-start').value = dates[0];
+    document.getElementById('date-end').value = dates[dates.length-1];
+  }
+  renderDashboard();
+
+  // Conserve ce chargement dans l'historique (base de données), sans action requise
+  await autoArchiveCurrentCalculation();
+
+  // Sauvegarde des résultats agrégés + DMT pour restaurer au prochain chargement
+  try{
+    await storage.set('last_results', JSON.stringify(state.results));
+    await storage.set('last_dmt', JSON.stringify(state.dmt));
+    const meta = {
+      savedAt: new Date().toISOString(),
+      files: {
+        entrants: state.files.entrants || null,
+        sortants: state.files.sortants || null,
+        mails: state.files.mails || null,
+      }
+    };
+    await storage.set('last_meta', JSON.stringify(meta));
+    // Sauvegarde des données du Reporting (Vue Agent / Vue Activité) : sans cela, l'onglet
+    // Reporting redevenait vide à chaque réouverture du dashboard car ces données n'étaient
+    // gardées qu'en mémoire (contrairement au CA total qui, lui, était bien sauvegardé).
+    await storage.set('agent_ca_stats_by_date', JSON.stringify(state.agentCaStatsByDate));
+    await storage.set('raw_rtt', JSON.stringify(state.raw.rtt));
+    log('Données sauvegardées — seront rechargées automatiquement à la prochaine ouverture.', 'ok');
+  }catch(e){ log('Avertissement : sauvegarde des données impossible ('+e.message+').', 'err'); }
+}
+
+function updateDmtDisplay(){
+  document.getElementById('dmt-global').textContent = state.dmt.global ? fmtDuree(state.dmt.global) : '—';
+  document.getElementById('dmt-mada').textContent = state.dmt.bysite.Mada ? fmtDuree(state.dmt.bysite.Mada) : '—';
+  document.getElementById('dmt-fes').textContent = state.dmt.bysite['Fès'] ? fmtDuree(state.dmt.bysite['Fès']) : '—';
+  document.getElementById('dmt-casa').textContent = state.dmt.bysite.Casablanca ? fmtDuree(state.dmt.bysite.Casablanca) : '—';
+}
+function fmtDuree(sec){
+  return sec.toFixed(1)+' s ('+(sec/60).toFixed(2)+' min)';
+}
+
+/* =========================================================================
+   PRICING
+========================================================================= */
+// Jours fériés légaux français 2026 (à mettre à jour chaque année)
+const FRENCH_HOLIDAYS = new Set([
+  '2026-01-01', // Jour de l'An
+  '2026-04-06', // Lundi de Pâques
+  '2026-05-01', // Fête du Travail
+  '2026-05-08', // Victoire 1945
+  '2026-05-14', // Ascension
+  '2026-05-25', // Lundi de Pentecôte
+  '2026-07-14', // Fête nationale
+  '2026-08-15', // Assomption
+  '2026-11-01', // Toussaint
+  '2026-11-11', // Armistice
+  '2026-12-25', // Noël
+]);
+function isFerieDay(dateKeyStr){
+  if(!dateKeyStr) return false;
+  if(FRENCH_HOLIDAYS.has(dateKeyStr)) return true;
+  const [y,m,d] = dateKeyStr.split('-').map(Number);
+  return new Date(y, m-1, d).getDay() === 0;
+}
+// Utilisé uniquement pour neutraliser la production du dimanche dans le calcul de CA/H et Prod/H
+// de l'onglet Reporting (Vue Agent) — indépendant de isFerieDay (qui sert au tarif Actes/CA).
+function isSunday(dateKeyStr){
+  if(!dateKeyStr) return false;
+  const [y,m,d] = dateKeyStr.split('-').map(Number);
+  return new Date(y, m-1, d).getDay() === 0;
+}
+function priceFor(site, activite, type, siteDmtSec, isFerie){
+  if(type === 'Appels sortants' && state.dmtFormula && state.dmtFormula.trim()){
+    const dmtSec = siteDmtSec != null ? siteDmtSec : state.dmt.global;
+    if(dmtSec != null){
+      try{
+        const fn = new Function('DMT_sec','DMT_min', 'return ('+state.dmtFormula+');');
+        const val = fn(dmtSec, dmtSec/60);
+        if(typeof val === 'number' && !isNaN(val)) return val;
+      }catch(e){ /* formule invalide -> fallback grille */ }
+    }
+  }
+  const row = state.tarifs.find(t=>t.site===site && t.activite===activite && t.type===type);
+  if(!row) return 0;
+  return isFerie ? (Number(row.prixFerie)||0) : (Number(row.prixNormal)||0);
+}
+
+/* =========================================================================
+   DASHBOARD RENDERING
+========================================================================= */
+function periodKey(ds, de){ return (ds||'')+'_'+(de||''); }
+
+function onPeriodModeChange(){
+  const mode = document.getElementById('period-mode').value;
+  document.getElementById('ref-date-label').style.display = (mode==='custom') ? 'none' : 'inline-block';
+  document.getElementById('custom-range-label').style.display = (mode==='custom') ? 'inline-block' : 'none';
+  if(mode!=='custom') applyPeriodFromRef();
+}
+function onRefDateChange(){ applyPeriodFromRef(); }
+function applyPeriodFromRef(){
+  const mode = document.getElementById('period-mode').value;
+  const refStr = document.getElementById('ref-date').value;
+  if(!refStr) return;
+  const ref = new Date(refStr+'T00:00:00');
+  let start, end;
+  if(mode==='day'){
+    start = end = ref;
+  } else if(mode==='week'){
+    const dow = ref.getDay(); // 0=dimanche
+    const diffToMonday = (dow===0) ? -6 : (1-dow);
+    start = new Date(ref); start.setDate(ref.getDate()+diffToMonday);
+    end = new Date(start); end.setDate(start.getDate()+6);
+  } else if(mode==='month'){
+    start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    end = new Date(ref.getFullYear(), ref.getMonth()+1, 0);
+  } else { return; }
+  document.getElementById('date-start').value = dateKey(start);
+  document.getElementById('date-end').value = dateKey(end);
+  renderDashboard();
+}
+
+function listDatesInRange(ds, de){
+  const out = [];
+  if(!ds || !de) return out;
+  let cur = new Date(ds+'T00:00:00');
+  const end = new Date(de+'T00:00:00');
+  let guard = 0;
+  while(cur <= end && guard < 2000){
+    out.push(dateKey(cur));
+    cur.setDate(cur.getDate()+1);
+    guard++;
+  }
+  return out;
+}
+
+const BARCELONE_SITES = ['Mada','Fès','Casablanca'];
+const BARCELONE_TARIFS = {'Mada':14.25, 'Fès':30.4344, 'Casablanca':30.4344};
+function barceloneKey(date, site){ return date+'|'+site; }
+
+function renderBarceloneDaysTable(){
+  const ds = document.getElementById('date-start').value;
+  const de = document.getElementById('date-end').value;
+  const dates = listDatesInRange(ds, de);
+  const tbody = document.getElementById('barcelone-days-body');
+  tbody.innerHTML = '';
+  dates.forEach(d=>{
+    let caJour = 0;
+    const inputs = BARCELONE_SITES.map(site=>{
+      const heures = state.barceloneHeures[barceloneKey(d,site)] || 0;
+      caJour += heures * BARCELONE_TARIFS[site];
+      return `<td><input type="number" min="0" step="0.25" value="${heures}" style="width:70px;"
+              onchange="onBarceloneHeureDayChange('${d}','${site}', this.value)"></td>`;
+    }).join('');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${d}</td>${inputs}<td>${fmtEUR(caJour)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function onBarceloneHeureDayChange(dateStr, site, value){
+  const heures = Number(value) || 0;
+  const key = barceloneKey(dateStr, site);
+  if(heures > 0) state.barceloneHeures[key] = heures;
+  else delete state.barceloneHeures[key];
+  try{ await storage.set('barcelone_heures', JSON.stringify(state.barceloneHeures)); }catch(e){}
+  renderDashboard();
+}
+
+function renderDashboard(){
+  if(!state.results.length){
+    document.getElementById('dashboard-empty').style.display='block';
+    document.getElementById('dashboard-content').style.display='none';
+    return;
+  }
+  document.getElementById('dashboard-empty').style.display='none';
+  document.getElementById('dashboard-content').style.display='block';
+
+  const ds = document.getElementById('date-start').value;
+  const de = document.getElementById('date-end').value;
+  const activiteFilter = document.getElementById('filter-activite').value;
+  const siteFilter = document.getElementById('filter-site').value;
+  let filtered = state.results.filter(r=> (!ds || r.date>=ds) && (!de || r.date<=de));
+  if(activiteFilter) filtered = filtered.filter(r=> r.activite === activiteFilter);
+  if(siteFilter) filtered = filtered.filter(r=> r.site === siteFilter);
+
+  // Heures Barcelone : saisie manuelle par jour ET par site, sommée sur la période affichée
+  renderBarceloneDaysTable();
+  const datesInRange = listDatesInRange(ds, de);
+  const barceloneBySite = {};
+  let heuresBarcelone = 0, caBarcelone = 0;
+  BARCELONE_SITES.forEach(site=>{
+    if(siteFilter && site !== siteFilter) return;
+    const h = datesInRange.reduce((sum,d)=> sum + (state.barceloneHeures[barceloneKey(d,site)]||0), 0);
+    if(h > 0){
+      barceloneBySite[site] = h;
+      heuresBarcelone += h;
+      caBarcelone += h * BARCELONE_TARIFS[site];
+    }
+  });
+  document.getElementById('barcelone-ca-preview').textContent = heuresBarcelone > 0
+    ? `Total période : ${heuresBarcelone} h = ${fmtEUR(caBarcelone)} (activité Barcelone — `+
+      Object.entries(barceloneBySite).map(([s,h])=>s+': '+h+'h').join(', ')+')'
+    : '';
+
+  let totalCA=0, totalQty=0;
+  const bySite={}, byActivite={};
+  const detail = {};
+  filtered.forEach(r=>{
+    const siteDmt = state.dmt.bysite[r.site];
+    const ferie = isFerieDay(r.date);
+    const price = priceFor(r.site, r.activite, r.type, siteDmt, ferie);
+    const ca = price * r.qty;
+    totalCA += ca; totalQty += r.qty;
+    bySite[r.site] = (bySite[r.site]||0) + ca;
+    byActivite[r.activite] = (byActivite[r.activite]||0) + ca;
+    const dkey = [r.site,r.activite,r.type, ferie?'Férié':'Normal'].join('|');
+    if(!detail[dkey]) detail[dkey] = {site:r.site, activite:r.activite, type:r.type+(ferie?' (férié)':''), qty:0, ca:0};
+    detail[dkey].qty += r.qty;
+    detail[dkey].ca += ca;
+  });
+
+  if(caBarcelone > 0 && (!activiteFilter || activiteFilter==='Barcelone')){
+    totalCA += caBarcelone;
+    totalQty += heuresBarcelone;
+    byActivite['Barcelone'] = (byActivite['Barcelone']||0) + caBarcelone;
+    Object.entries(barceloneBySite).forEach(([site, h])=>{
+      const ca = h * BARCELONE_TARIFS[site];
+      bySite[site] = (bySite[site]||0) + ca;
+      detail['Barcelone|'+site] = {site:site, activite:'Barcelone', type:'Heures (saisie manuelle)', qty:h, ca:ca};
+    });
+  }
+
+  // Répartition "Actes traités" par type (glossaire KPI : Mails traités / Appels entrants / Appels sortants)
+  let qtyAppelsEntrants=0, qtyAppelsSortants=0, qtyMails=0;
+  filtered.forEach(r=>{
+    if(r.type === 'Appels sortants') qtyAppelsSortants += r.qty;
+    else if(r.type === 'Mails') qtyMails += r.qty;
+    else qtyAppelsEntrants += r.qty; // HYPER / C2E / AFR / Drive / Actes traités (SAV)
+  });
+  document.getElementById('kpi-entrants').textContent = fmtNum(qtyAppelsEntrants);
+  document.getElementById('kpi-sortants').textContent = fmtNum(qtyAppelsSortants);
+  document.getElementById('kpi-mails').textContent = fmtNum(qtyMails);
+
+  document.getElementById('kpi-ca').textContent = fmtEUR(totalCA);
+  document.getElementById('kpi-ca-sub').textContent = ds && de ? ('Période '+ds+' → '+de) : '';
+  document.getElementById('kpi-actes').textContent = fmtNum(totalQty);
+  document.getElementById('kpi-actes-sub').textContent = filtered.length+' combinaisons site/activité/type'+
+    (activiteFilter?' (activité : '+activiteFilter+')':'')+(siteFilter?' (site : '+siteFilter+')':'');
+
+  // CA/H = CA total (période/activité/site filtrés) ÷ heures de log (fichier RTT, mêmes filtres) —
+  // même principe que le CA/H de l'onglet Reporting, ici agrégé sur toute la sélection du Dashboard.
+  const heuresLogSec = sumHeuresLogSecForFilter(ds, de, siteFilter);
+  const heuresLog = heuresLogSec/3600;
+  document.getElementById('kpi-ca-h').textContent = heuresLog>0 ? fmtEUR(totalCA/heuresLog) : '—';
+  document.getElementById('kpi-ca-h-sub').textContent = heuresLog>0
+    ? fmtNum(Math.round(heuresLog))+' h de log (RTT)'
+    : 'Chargez le fichier RTT pour activer ce calcul';
+  document.getElementById('kpi-dmt').textContent = state.dmt.global ? fmtDuree(state.dmt.global) : '—';
+  document.getElementById('kpi-dmt-sub').textContent = state.dmtFormula.trim() ? 'Formule active pour le tarif sortant' : 'Tarif sortant = grille fixe';
+  const excludeShort = document.getElementById('opt-exclude-short').checked;
+  const threshold = document.getElementById('opt-short-threshold').value;
+  document.getElementById('dmt-filter-note').textContent = excludeShort
+    ? `DMT calculée hors appels sortants < ${threshold}s (filtre actif dans l'onglet Import)`
+    : 'DMT calculée sur tous les appels sortants (filtre <30s désactivé)';
+
+  const tbody = document.getElementById('detail-body');
+  tbody.innerHTML='';
+  Object.values(detail).sort((a,b)=> (a.site+a.activite+a.type).localeCompare(b.site+b.activite+b.type)).forEach(d=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${d.site}</td><td>${d.activite}</td><td>${d.type}</td><td>${fmtNum(d.qty)}</td><td>${fmtEUR(d.ca)}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Les graphiques dépendent de Chart.js (CDN externe) : s'il est indisponible
+  // (réseau restreint, bloqueur de scripts...), on ne doit pas perdre pour
+  // autant les KPI/le détail déjà affichés ci-dessus, ni bloquer l'archivage
+  // automatique qui s'exécute juste après ce calcul (voir runCalculationAsync).
+  try{ renderCharts(bySite, byActivite); }
+  catch(e){ log('Graphiques indisponibles (Chart.js non chargé) : '+e.message, 'err'); }
+}
+
+let chartSite, chartActivite;
+function renderCharts(bySite, byActivite){
+  const ctx1 = document.getElementById('chart-site');
+  const ctx2 = document.getElementById('chart-activite');
+  if(chartSite) chartSite.destroy();
+  if(chartActivite) chartActivite.destroy();
+  const palette = ['#203864','#c8622a','#3b6ea5','#2f7a4f','#c98a12'];
+  chartSite = new Chart(ctx1, {
+    type:'bar',
+    data:{labels:Object.keys(bySite), datasets:[{label:'CA (€)', data:Object.values(bySite), backgroundColor:palette}]},
+    options:{plugins:{title:{display:true,text:'CA par site'},legend:{display:false}}, responsive:true}
+  });
+  chartActivite = new Chart(ctx2, {
+    type:'bar',
+    data:{labels:Object.keys(byActivite), datasets:[{label:'CA (€)', data:Object.values(byActivite), backgroundColor:palette}]},
+    options:{plugins:{title:{display:true,text:'CA par activité'},legend:{display:false}}, responsive:true}
+  });
+}
+
+function exportCsv(){
+  const rows = [['Site','Activité','Type','Quantité','CA (€)']];
+  document.querySelectorAll('#detail-body tr').forEach(tr=>{
+    rows.push(Array.from(tr.children).map(td=>td.textContent));
+  });
+  const csv = rows.map(r=>r.join(';')).join('\n');
+  const BOM = '\uFEFF'; // nécessaire pour qu'Excel affiche correctement les accents (UTF-8)
+  const blob = new Blob([BOM + csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'detail_ca.csv';
+  a.click();
+}
+
+/* =========================================================================
+   REPORTING (Vue Agent / Vue Activité) — tous les KPI du glossaire
+   ========================================================================
+   - Le CA/actes par agent est dérivé des mêmes lignes ("rows") que le calcul
+     du Dashboard : la somme par agent retombe donc exactement sur le CA
+     total affiché dans le Dashboard (aucun recalcul divergent).
+   - Les indicateurs de connexion (heures de log, disponibilité, retrait,
+     panier, pause, brief) viennent du fichier RTT, agrégé par agent
+     indépendamment. Un agent absent de la Répartition d'équipes partagée
+     est ignoré partout (CA, actes, heures de log) : consigne explicite de
+     l'utilisateur ("toutes les personnes ne figurant pas dans la
+     répartition des équipes partagée sont à ignorer").
+   - Taux d'occupation et Taux de transfert restent non calculés : la
+     donnée source nécessaire n'est pas dans l'export RTT actuel (voir
+     l'onglet Glossaire KPI) — ils s'affichent à "—".
+========================================================================= */
+// Agrège le CA/actes par agent ET par jour (au lieu d'un seul total par agent) : cela permet
+// ensuite de filtrer le Reporting par Jour/Semaine/Mois/Période sans avoir à re-parcourir les
+// fichiers entrants/sortants/mails à chaque changement de filtre, et sans perdre ce détail
+// quotidien après un rechargement de la page (voir sumAgentCaStatsForRange ci-dessous).
+function computeAgentCaStatsByDate(rows){
+  const stats = {};
+  rows.forEach(r=>{
+    if(!r.agent) return;
+    const dk = dateKey(r.date);
+    const k = normKey(r.agent)+'|'+dk;
+    if(!stats[k]) stats[k] = {agent:String(r.agent).trim(), site:r.site, activite:r.activite, date:dk,
+      entrants:0, sortants:0, mails:0, ca:0, meaSum:0, acwSum:0};
+    const s = stats[k];
+    const ferie = isFerieDay(dk);
+    const siteDmt = state.dmt.bysite[r.site];
+    const price = priceFor(r.site, r.activite, r.type, siteDmt, ferie);
+    s.ca += price * 1;
+    if(r.type === 'Appels sortants'){ s.sortants++; s.acwSum += r.acw||0; }
+    else if(r.type === 'Mails'){ s.mails++; }
+    else { s.entrants++; s.meaSum += r.mea||0; s.acwSum += r.acw||0; } // HYPER/C2E/AFR/Drive/Actes traités (SAV)
+  });
+  return stats;
+}
+
+// Ré-agrège les totaux par agent (même forme que l'ancien computeAgentCaStats) en ne sommant que
+// les jours compris dans [ds, de] ; ds/de vides = toute la période chargée.
+// Calcule en plus des totaux "HD" (hors dimanche) : entrantsHD/sortantsHD/mailsHD/caHD, utilisés
+// uniquement pour neutraliser la production du dimanche dans le calcul de CA/H et Prod/H de la
+// Vue Agent (les colonnes Actes traités / CA (€) restent, elles, calculées sur tous les jours).
+function sumAgentCaStatsForRange(byDate, ds, de){
+  const stats = {};
+  Object.values(byDate).forEach(d=>{
+    if(ds && d.date < ds) return;
+    if(de && d.date > de) return;
+    const k = normKey(d.agent);
+    if(!stats[k]) stats[k] = {agent:d.agent, site:d.site, activite:d.activite,
+      entrants:0, sortants:0, mails:0, ca:0, meaSum:0, acwSum:0,
+      entrantsHD:0, sortantsHD:0, mailsHD:0, caHD:0};
+    const s = stats[k];
+    s.entrants += d.entrants; s.sortants += d.sortants; s.mails += d.mails; s.ca += d.ca;
+    s.meaSum += d.meaSum; s.acwSum += d.acwSum;
+    if(!isSunday(d.date)){
+      s.entrantsHD += d.entrants; s.sortantsHD += d.sortants; s.mailsHD += d.mails; s.caHD += d.ca;
+    }
+  });
+  return stats;
+}
+
+function computeRttStats(ds, de){
+  const stats = {};
+  if(!state.raw.rtt.length) return stats;
+  const maps = buildMaps();
+  const sample = state.raw.rtt[0];
+  const agentCol = findCol(sample, ['Nom du propriétaire','Vonage Agent Summary: Nom du propriétaire','Agent: Nom complet','Agent']);
+  const connCol = findCol(sample, ['Durée totale de connexion']);
+  const dispoCol = findCol(sample, ['Temps de dispo']);
+  const retraitCol = findCol(sample, ['Durée de retrait']);
+  const panierCol = findCol(sample, ['Panier']);
+  const pauseCol = findCol(sample, ['Pause cafe']);
+  const briefCol = findCol(sample, ['Brief']);
+  const dateCol = findCol(sample, ['Date locale','Date']);
+  state.raw.rtt.forEach(r=>{
+    const agentName = r[agentCol];
+    if(!agentName) return;
+    const dk = dateCol ? dateKey(parseDate(r[dateCol])) : null;
+    if(ds || de){
+      if(ds && (!dk || dk < ds)) return;
+      if(de && (!dk || dk > de)) return;
+    }
+    const k = normKey(agentName);
+    if(!stats[k]){
+      const {site, act} = classifyAgent(agentName, maps);
+      if(!site) return; // agent absent de la répartition des équipes partagée -> ignoré (consigne utilisateur)
+      stats[k] = {agent:String(agentName).trim(), site, activite:act,
+        heuresLogSec:0, heuresLogSecHD:0, dispoSec:0, retraitSec:0, panierSec:0, pauseSec:0, briefSec:0, jours:0};
+    }
+    const s = stats[k];
+    const conn = Number(r[connCol])||0;
+    s.heuresLogSec += conn;
+    if(!isSunday(dk)) s.heuresLogSecHD += conn; // neutralise le dimanche pour CA/H et Prod/H (Vue Agent)
+    s.dispoSec += Number(r[dispoCol])||0;
+    s.retraitSec += Number(r[retraitCol])||0;
+    s.panierSec += Number(r[panierCol])||0;
+    s.pauseSec += Number(r[pauseCol])||0;
+    s.briefSec += Number(r[briefCol])||0;
+    s.jours++;
+  });
+  return stats;
+}
+
+// Utilisé par le KPI "CA/H" de l'onglet Dashboard : somme les heures de log (RTT) sur la même
+// période/site que le filtre Dashboard actif, en réutilisant l'agrégation par agent de computeRttStats.
+function sumHeuresLogSecForFilter(ds, de, siteFilter){
+  const rttStats = computeRttStats(ds, de);
+  let sec = 0;
+  Object.values(rttStats).forEach(s=>{
+    if(siteFilter && s.site !== siteFilter) return;
+    sec += s.heuresLogSec;
+  });
+  return sec;
+}
+
+function mergeAgentStats(caStats, rttStats){
+  const keys = new Set([...Object.keys(caStats), ...Object.keys(rttStats)]);
+  const merged = [];
+  keys.forEach(k=>{
+    const c = caStats[k], r = rttStats[k];
+    const agent = (c&&c.agent) || (r&&r.agent);
+    const site = (c&&c.site) || (r&&r.site) || null;
+    const activite = (c&&c.activite) || (r&&r.activite) || null;
+    const entrants = c?c.entrants:0, sortants = c?c.sortants:0, mails = c?c.mails:0;
+    const actes = entrants+sortants+mails;
+    const ca = c?c.ca:0;
+    const heuresLogSec = r?r.heuresLogSec:0;
+    const heuresLog = heuresLogSec/3600;
+    // CA/H et Prod/H (Vue Agent) neutralisent la production du dimanche : numérateur et
+    // dénominateur utilisent uniquement les jours hors dimanche, pour ne pas déformer ces deux
+    // ratios. Les colonnes Actes traités / CA (€) / Heures de log restent, elles, sur tous les jours.
+    const actesHD = c ? (c.entrantsHD||0)+(c.sortantsHD||0)+(c.mailsHD||0) : 0;
+    const caHD = c ? (c.caHD||0) : 0;
+    const heuresLogSecHD = r ? (r.heuresLogSecHD||0) : 0;
+    const heuresLogHD = heuresLogSecHD/3600;
+    merged.push({
+      agent, site, activite,
+      entrants, sortants, mails, actes, ca,
+      caParHeure: heuresLogHD>0 ? caHD/heuresLogHD : null,
+      prodParHeure: heuresLogHD>0 ? actesHD/heuresLogHD : null,
+      meaMoy: c && entrants>0 ? c.meaSum/entrants : null,
+      acwMoy: c && (entrants+sortants)>0 ? c.acwSum/(entrants+sortants) : null,
+      heuresLogSec, heuresLog: r ? heuresLog : null,
+      dispoSec: r?r.dispoSec:0, retraitSec: r?r.retraitSec:0, panierSec: r?r.panierSec:0,
+      pauseSec: r?r.pauseSec:0, briefSec: r?r.briefSec:0,
+      tauxDispo: heuresLogSec>0 ? r.dispoSec/heuresLogSec : null,
+      tauxRetrait: heuresLogSec>0 ? r.retraitSec/heuresLogSec : null,
+      tauxPanier: heuresLogSec>0 ? r.panierSec/heuresLogSec : null,
+      tauxPause: heuresLogSec>0 ? r.pauseSec/heuresLogSec : null,
+      tauxBrief: heuresLogSec>0 ? r.briefSec/heuresLogSec : null,
+      hasCa: !!c, hasRtt: !!r
+    });
+  });
+  merged.sort((a,b)=> (b.ca||0)-(a.ca||0));
+  return merged;
+}
+
+function groupByActivite(merged){
+  const groups = {};
+  merged.forEach(m=>{
+    const key = (m.site||'Non identifié')+'|'+(m.activite||'—');
+    if(!groups[key]) groups[key] = {site:m.site||'Non identifié', activite:m.activite||'—',
+      nbAgents:0, entrants:0, sortants:0, mails:0, actes:0, ca:0,
+      heuresLogSec:0, dispoSec:0, retraitSec:0, panierSec:0, pauseSec:0, briefSec:0,
+      meaSumTot:0, entrantsTot:0, acwSumTot:0, actesAcwTot:0};
+    const g = groups[key];
+    g.nbAgents++;
+    g.entrants += m.entrants; g.sortants += m.sortants; g.mails += m.mails; g.actes += m.actes; g.ca += m.ca;
+    g.heuresLogSec += m.heuresLogSec||0;
+    g.dispoSec += m.dispoSec||0; g.retraitSec += m.retraitSec||0; g.panierSec += m.panierSec||0;
+    g.pauseSec += m.pauseSec||0; g.briefSec += m.briefSec||0;
+    if(m.meaMoy!=null){ g.meaSumTot += m.meaMoy*m.entrants; g.entrantsTot += m.entrants; }
+    if(m.acwMoy!=null){ g.acwSumTot += m.acwMoy*(m.entrants+m.sortants); g.actesAcwTot += (m.entrants+m.sortants); }
+  });
+  const out = Object.values(groups).map(g=>{
+    const heuresLog = g.heuresLogSec/3600;
+    return {
+      site:g.site, activite:g.activite, nbAgents:g.nbAgents,
+      entrants:g.entrants, sortants:g.sortants, mails:g.mails, actes:g.actes, ca:g.ca,
+      heuresLog: g.heuresLogSec>0 ? heuresLog : null,
+      caParHeure: heuresLog>0 ? g.ca/heuresLog : null,
+      prodParHeure: heuresLog>0 ? g.actes/heuresLog : null,
+      meaMoy: g.entrantsTot>0 ? g.meaSumTot/g.entrantsTot : null,
+      acwMoy: g.actesAcwTot>0 ? g.acwSumTot/g.actesAcwTot : null,
+      tauxDispo: g.heuresLogSec>0 ? g.dispoSec/g.heuresLogSec : null,
+      tauxRetrait: g.heuresLogSec>0 ? g.retraitSec/g.heuresLogSec : null,
+      tauxPanier: g.heuresLogSec>0 ? g.panierSec/g.heuresLogSec : null,
+      tauxPause: g.heuresLogSec>0 ? g.pauseSec/g.heuresLogSec : null,
+      tauxBrief: g.heuresLogSec>0 ? g.briefSec/g.heuresLogSec : null,
+    };
+  });
+  out.sort((a,b)=> (b.ca||0)-(a.ca||0));
+  return out;
+}
+
+function fmtPct(x){ return x==null ? '—' : (x*100).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'; }
+function fmtH(x){ return x==null ? '—' : x.toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1})+' h'; }
+function fmtSec(x){ return x==null ? '—' : Math.round(x)+' s'; }
+function fmtEURorDash(x){ return x==null ? '—' : fmtEUR(x); }
+
+let lastReportingMerged = [];
+function refreshAgentReporting(){
+  const ds = document.getElementById('reporting-date-start') ? document.getElementById('reporting-date-start').value : '';
+  const de = document.getElementById('reporting-date-end') ? document.getElementById('reporting-date-end').value : '';
+  state.agentCaStats = sumAgentCaStatsForRange(state.agentCaStatsByDate||{}, ds, de);
+  const rttStats = computeRttStats(ds, de);
+  lastReportingMerged = mergeAgentStats(state.agentCaStats||{}, rttStats);
+  renderReporting();
+}
+
+// Filtre Jour/Semaine/Mois/Personnalisée/Toute la période, propre à l'onglet Reporting (indépendant
+// du filtre de l'onglet Dashboard) — même logique de calcul de plage que celle du Dashboard.
+function onReportingPeriodModeChange(){
+  const mode = document.getElementById('reporting-period-mode').value;
+  document.getElementById('reporting-ref-date-label').style.display = (mode==='day'||mode==='week'||mode==='month') ? 'inline-block' : 'none';
+  document.getElementById('reporting-custom-range-label').style.display = (mode==='custom') ? 'inline-block' : 'none';
+  if(mode==='all'){
+    document.getElementById('reporting-date-start').value = '';
+    document.getElementById('reporting-date-end').value = '';
+    refreshAgentReporting();
+  } else if(mode==='custom'){
+    refreshAgentReporting();
+  } else {
+    applyReportingPeriodFromRef();
+  }
+}
+function onReportingRefDateChange(){ applyReportingPeriodFromRef(); }
+function applyReportingPeriodFromRef(){
+  const mode = document.getElementById('reporting-period-mode').value;
+  const refStr = document.getElementById('reporting-ref-date').value;
+  if(!refStr) return;
+  const ref = new Date(refStr+'T00:00:00');
+  let start, end;
+  if(mode==='day'){
+    start = end = ref;
+  } else if(mode==='week'){
+    const dow = ref.getDay(); // 0=dimanche
+    const diffToMonday = (dow===0) ? -6 : (1-dow);
+    start = new Date(ref); start.setDate(ref.getDate()+diffToMonday);
+    end = new Date(start); end.setDate(start.getDate()+6);
+  } else if(mode==='month'){
+    start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    end = new Date(ref.getFullYear(), ref.getMonth()+1, 0);
+  } else { return; }
+  document.getElementById('reporting-date-start').value = dateKey(start);
+  document.getElementById('reporting-date-end').value = dateKey(end);
+  refreshAgentReporting();
+}
+
+let reportingView = 'agent';
+function setReportingView(v){
+  reportingView = v;
+  document.querySelectorAll('#panel-reporting .view-toggle button').forEach(b=>{
+    b.classList.toggle('secondary', b.dataset.view!==v);
+  });
+  // Les colonnes changent d'une vue à l'autre (ex. "Nb agents" n'existe qu'en vue Activité) :
+  // on réinitialise le tri pour éviter de trier sur une colonne qui n'existe plus.
+  reportingSortKey = null;
+  reportingSortDir = 'desc';
+  renderReporting();
+}
+
+function resetReportingFilters(){
+  document.getElementById('reporting-filter-site').value = '';
+  document.getElementById('reporting-filter-agent').value = '';
+  renderReporting();
+}
+
+// Tri croissant/décroissant sur les colonnes du tableau Reporting (Vue Agent et Vue Activité).
+// Un clic sur une colonne texte (agent/site/activité) trie par défaut en A→Z ; sur une colonne
+// numérique (CA, actes, taux...), en décroissant (valeurs les plus fortes en premier). Un second
+// clic sur la même colonne inverse le sens.
+let reportingSortKey = null;
+let reportingSortDir = 'desc';
+const REPORTING_TEXT_COLS = new Set(['agent','site','activite']);
+function sortReportingBy(key){
+  if(reportingSortKey === key){
+    reportingSortDir = (reportingSortDir === 'asc') ? 'desc' : 'asc';
+  } else {
+    reportingSortKey = key;
+    reportingSortDir = REPORTING_TEXT_COLS.has(key) ? 'asc' : 'desc';
+  }
+  renderReporting();
+}
+function sortReportingRows(rows, key, dir){
+  if(!key) return rows;
+  const sign = dir === 'asc' ? 1 : -1;
+  return rows.slice().sort((a,b)=>{
+    const va = a[key], vb = b[key];
+    const na = (va===null || va===undefined || va==='');
+    const nb = (vb===null || vb===undefined || vb==='');
+    if(na && nb) return 0;
+    if(na) return 1;  // valeurs manquantes ("Non identifié", "—") toujours en fin de liste
+    if(nb) return -1;
+    if(typeof va === 'string' || typeof vb === 'string'){
+      return sign * String(va).localeCompare(String(vb), 'fr', {sensitivity:'base'});
+    }
+    return sign * (va - vb);
+  });
+}
+
+function reportingPeriodLabel(){
+  const ds = document.getElementById('reporting-date-start').value;
+  const de = document.getElementById('reporting-date-end').value;
+  if(!ds && !de) return 'toute la période chargée';
+  const fmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('fr-FR') : '…';
+  if(ds && de && ds === de) return 'le '+fmt(ds);
+  return 'du '+fmt(ds||'…')+' au '+fmt(de||'…');
+}
+
+function renderReporting(){
+  const empty = document.getElementById('reporting-empty');
+  const wrap = document.getElementById('reporting-wrap');
+  const hasAnyData = Object.keys(state.agentCaStatsByDate||{}).length>0 || state.raw.rtt.length>0;
+  if(!lastReportingMerged.length){
+    empty.style.display='block'; wrap.style.display='none';
+    empty.textContent = hasAnyData
+      ? 'Aucune donnée pour la période sélectionnée ('+reportingPeriodLabel()+'). Essayez "Toute la période" ou une autre plage dans le filtre Période ci-dessus.'
+      : 'Aucune donnée pour le moment. Chargez les fichiers dans l\'onglet "1. Import" (entrants/sortants/mails + RTT, ou le JSON consolidé) puis lancez le calcul.';
+    return;
+  }
+  empty.style.display='none'; wrap.style.display='block';
+
+  const nbRtt = lastReportingMerged.filter(m=>m.hasRtt).length;
+  const nbCa = lastReportingMerged.filter(m=>m.hasCa).length;
+  let coverageTxt = 'Période : '+reportingPeriodLabel()+' — '+lastReportingMerged.length+' agents au total — '+nbRtt+' avec données RTT (heures de log/disponibilité/retrait...)'+
+    (nbRtt < lastReportingMerged.length ? ', '+(lastReportingMerged.length-nbRtt)+' sans (importer le fichier RTT pour les compléter)' : '');
+  if(nbCa === 0){
+    coverageTxt += ' — ⚠️ CA/actes non calculés : cliquez sur "▶ Lancer le calcul" dans l\'onglet Import (avec entrants/sortants/mails chargés) pour les obtenir.';
+  } else if(nbCa < lastReportingMerged.length){
+    coverageTxt += ', '+nbCa+' avec CA/actes calculés (les autres n\'apparaissent que dans les appels entrants/sortants/mails ou seulement en RTT)';
+  }
+  document.getElementById('reporting-coverage').textContent = coverageTxt;
+
+  const colsAgent = [
+    {label:'Agent',key:'agent'},{label:'Site',key:'site'},{label:'Activité',key:'activite'},
+    {label:'Actes traités',key:'actes'},{label:'Appels entrants',key:'entrants'},{label:'Appels sortants',key:'sortants'},
+    {label:'Mails traités',key:'mails'},{label:'MEA moy.',key:'meaMoy'},{label:'ACW moy.',key:'acwMoy'},
+    {label:'CA (€)',key:'ca'},{label:'Heures de log',key:'heuresLog'},{label:'CA/H (€) (hors dim.)',key:'caParHeure'},
+    {label:'Prod/H (hors dim.)',key:'prodParHeure'},{label:'Temps de dispo',key:'tauxDispo'},{label:'Taux de retrait',key:'tauxRetrait'},
+    {label:'Taux panier',key:'tauxPanier'},{label:'Taux Pause',key:'tauxPause'},{label:'Taux brief',key:'tauxBrief'}
+  ];
+  const colsActivite = [
+    {label:'Site',key:'site'},{label:'Activité',key:'activite'},{label:'Nb agents',key:'nbAgents'},
+    {label:'Actes traités',key:'actes'},{label:'Appels entrants',key:'entrants'},{label:'Appels sortants',key:'sortants'},
+    {label:'Mails traités',key:'mails'},{label:'MEA moy.',key:'meaMoy'},{label:'ACW moy.',key:'acwMoy'},
+    {label:'CA (€)',key:'ca'},{label:'Heures de log',key:'heuresLog'},{label:'CA/H (€)',key:'caParHeure'},
+    {label:'Prod/H',key:'prodParHeure'},{label:'Temps de dispo',key:'tauxDispo'},{label:'Taux de retrait',key:'tauxRetrait'},
+    {label:'Taux panier',key:'tauxPanier'},{label:'Taux Pause',key:'tauxPause'},{label:'Taux brief',key:'tauxBrief'}
+  ];
+
+  function theadHtml(cols){
+    return '<tr>'+cols.map(c=>{
+      const active = reportingSortKey === c.key;
+      const arrow = active ? (reportingSortDir==='asc' ? ' ▲' : ' ▼') : ' ⇅';
+      return '<th onclick="sortReportingBy(\''+c.key+'\')" style="cursor:pointer;user-select:none;white-space:nowrap;">'
+        +c.label+'<span style="opacity:'+(active?'1':'.35')+';font-size:10px;">'+arrow+'</span></th>';
+    }).join('')+'</tr>';
+  }
+
+  const thead = document.getElementById('reporting-thead');
+  const tbody = document.getElementById('reporting-tbody');
+  tbody.innerHTML = '';
+
+  const filterBar = document.getElementById('reporting-agent-filters');
+  const countLabel = document.getElementById('reporting-filter-count');
+
+  if(reportingView === 'agent'){
+    filterBar.style.display = 'flex';
+    thead.innerHTML = theadHtml(colsAgent);
+
+    // Filtre Site : options reconstruites à partir des données courantes, en gardant la sélection en cours si possible.
+    const siteSel = document.getElementById('reporting-filter-site');
+    const sitesAvail = Array.from(new Set(lastReportingMerged.map(m=>m.site||'Non identifié'))).sort((a,b)=>a.localeCompare(b,'fr'));
+    const prevSite = siteSel.value;
+    siteSel.innerHTML = '<option value="">Tous les sites</option>'+sitesAvail.map(s=>'<option value="'+s+'">'+s+'</option>').join('');
+    if(sitesAvail.includes(prevSite)) siteSel.value = prevSite;
+
+    const siteFilter = siteSel.value;
+    const agentFilterRaw = (document.getElementById('reporting-filter-agent').value||'').trim();
+    const agentFilter = normKey(agentFilterRaw);
+
+    let filtered = lastReportingMerged.filter(m=>{
+      if(siteFilter && (m.site||'Non identifié') !== siteFilter) return false;
+      if(agentFilter && !normKey(m.agent||'').includes(agentFilter)) return false;
+      return true;
+    });
+    filtered = sortReportingRows(filtered, reportingSortKey, reportingSortDir);
+
+    countLabel.textContent = (siteFilter || agentFilter)
+      ? filtered.length+' agent(s) affiché(s) sur '+lastReportingMerged.length
+      : '';
+
+    filtered.forEach(m=>{
+      const tr = document.createElement('tr');
+      if(!m.site) tr.style.opacity = '0.6';
+      tr.innerHTML = `<td>${m.agent}</td><td>${m.site||'Non identifié'}</td><td>${m.activite||'—'}</td>
+        <td>${fmtNum(m.actes)}</td><td>${fmtNum(m.entrants)}</td><td>${fmtNum(m.sortants)}</td><td>${fmtNum(m.mails)}</td>
+        <td>${fmtSec(m.meaMoy)}</td><td>${fmtSec(m.acwMoy)}</td>
+        <td>${fmtEURorDash(m.ca)}</td><td>${fmtH(m.heuresLog)}</td><td>${fmtEURorDash(m.caParHeure)}</td>
+        <td>${m.prodParHeure==null?'—':m.prodParHeure.toFixed(2)}</td>
+        <td>${fmtPct(m.tauxDispo)}</td><td>${fmtPct(m.tauxRetrait)}</td><td>${fmtPct(m.tauxPanier)}</td>
+        <td>${fmtPct(m.tauxPause)}</td><td>${fmtPct(m.tauxBrief)}</td>`;
+      tbody.appendChild(tr);
+    });
+  } else {
+    filterBar.style.display = 'none';
+    countLabel.textContent = '';
+    let groups = groupByActivite(lastReportingMerged);
+    groups = sortReportingRows(groups, reportingSortKey, reportingSortDir);
+    thead.innerHTML = theadHtml(colsActivite);
+    groups.forEach(g=>{
+      const tr = document.createElement('tr');
+      if(g.site==='Non identifié') tr.style.opacity = '0.6';
+      tr.innerHTML = `<td>${g.site}</td><td>${g.activite}</td><td>${g.nbAgents}</td>
+        <td>${fmtNum(g.actes)}</td><td>${fmtNum(g.entrants)}</td><td>${fmtNum(g.sortants)}</td><td>${fmtNum(g.mails)}</td>
+        <td>${fmtSec(g.meaMoy)}</td><td>${fmtSec(g.acwMoy)}</td>
+        <td>${fmtEURorDash(g.ca)}</td><td>${fmtH(g.heuresLog)}</td><td>${fmtEURorDash(g.caParHeure)}</td>
+        <td>${g.prodParHeure==null?'—':g.prodParHeure.toFixed(2)}</td>
+        <td>${fmtPct(g.tauxDispo)}</td><td>${fmtPct(g.tauxRetrait)}</td><td>${fmtPct(g.tauxPanier)}</td>
+        <td>${fmtPct(g.tauxPause)}</td><td>${fmtPct(g.tauxBrief)}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+/* =========================================================================
+   ARCHIVAGE / HISTORIQUE
+========================================================================= */
+function buildArchiveSnapshot(label){
+  const ds = document.getElementById('date-start').value;
+  const de = document.getElementById('date-end').value;
+  const activiteFilter = document.getElementById('filter-activite').value;
+  const siteFilter = document.getElementById('filter-site').value;
+  const totalCA = document.getElementById('kpi-ca').textContent;
+  const totalActes = document.getElementById('kpi-actes').textContent;
+  const detail = Array.from(document.querySelectorAll('#detail-body tr')).map(tr=>
+    Array.from(tr.children).map(td=>td.textContent)
+  );
+  return {
+    id: Date.now() + Math.floor(Math.random()*1000),
+    archivedAt: new Date().toISOString(),
+    label: label,
+    dateStart: ds, dateEnd: de,
+    activiteFilter: activiteFilter || 'Toutes',
+    siteFilter: siteFilter || 'Tous',
+    totalCA, totalActes,
+    detail
+  };
+}
+
+async function pushArchive(archive, successMsg){
+  state.archives.unshift(archive);
+  try{
+    await storage.set('archives', JSON.stringify(state.archives));
+    log(successMsg, 'ok');
+  }catch(e){ log('Erreur lors de l\'archivage : '+e.message, 'err'); }
+  renderHistorique();
+}
+
+async function archiveCurrentView(){
+  if(!state.results.length){
+    log('Rien à archiver : lancez un calcul depuis l\'onglet Import d\'abord.', 'err');
+    return;
+  }
+  const label = prompt('Libellé de cette archive (ex. "Juin 2026", "Semaine 25")', '') || '';
+  const archive = buildArchiveSnapshot(label);
+  await pushArchive(archive, 'Archive créée : '+(label||'(sans libellé)')+' — '+archive.totalCA);
+}
+
+/* Appelé automatiquement à la fin de chaque calcul : plus besoin de cliquer
+   sur "Archiver" pour que le chargement reste conservé dans l'historique. */
+async function autoArchiveCurrentCalculation(){
+  if(!state.results.length) return;
+  const archive = buildArchiveSnapshot('Chargement auto');
+  await pushArchive(archive, 'Historique mis à jour automatiquement — '+archive.totalCA);
+}
+
+function renderHistorique(){
+  const empty = document.getElementById('historique-empty');
+  const wrap = document.getElementById('historique-wrap');
+  if(!state.archives.length){
+    empty.style.display='block'; wrap.style.display='none';
+    return;
+  }
+  empty.style.display='none'; wrap.style.display='block';
+  const tbody = document.getElementById('historique-body');
+  tbody.innerHTML='';
+  state.archives.forEach(a=>{
+    const tr = document.createElement('tr');
+    const archivedAtStr = new Date(a.archivedAt).toLocaleString('fr-FR');
+    const periode = (a.dateStart||'?')+' → '+(a.dateEnd||'?');
+    tr.innerHTML = `<td>${archivedAtStr}</td><td>${a.label||'—'}</td><td>${periode}</td>
+      <td>${a.activiteFilter}</td><td>${a.totalActes}</td><td>${a.totalCA}</td>
+      <td>
+        <button class="btn small secondary" onclick="viewArchive(${a.id})">Voir</button>
+        <button class="btn small danger" onclick="deleteArchive(${a.id})">Supprimer</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function viewArchive(id){
+  const a = state.archives.find(x=>x.id===id);
+  if(!a) return;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelector('.tab-btn[data-tab="dashboard"]').classList.add('active');
+  document.getElementById('panel-dashboard').classList.add('active');
+
+  document.getElementById('dashboard-empty').style.display='none';
+  document.getElementById('dashboard-content').style.display='block';
+  document.getElementById('kpi-ca').textContent = a.totalCA;
+  document.getElementById('kpi-ca-sub').textContent = 'Archive du '+new Date(a.archivedAt).toLocaleString('fr-FR')+' — '+(a.label||'sans libellé');
+  document.getElementById('kpi-actes').textContent = a.totalActes;
+  document.getElementById('kpi-actes-sub').textContent = 'Vue archivée (lecture seule) — période '+a.dateStart+' → '+a.dateEnd;
+  document.getElementById('kpi-ca-h').textContent = '—';
+  document.getElementById('kpi-ca-h-sub').textContent = '';
+  document.getElementById('kpi-dmt').textContent = '—';
+  document.getElementById('kpi-dmt-sub').textContent = '';
+  document.getElementById('dmt-filter-note').textContent = '';
+  document.getElementById('kpi-entrants').textContent = '—';
+  document.getElementById('kpi-sortants').textContent = '—';
+  document.getElementById('kpi-mails').textContent = '—';
+
+  const tbody = document.getElementById('detail-body');
+  tbody.innerHTML='';
+  a.detail.forEach(row=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = row.map(v=>`<td>${v}</td>`).join('');
+    tbody.appendChild(tr);
+  });
+  if(chartSite) chartSite.destroy();
+  if(chartActivite) chartActivite.destroy();
+  log('Affichage de l\'archive "'+(a.label||'sans libellé')+'" — cliquez sur "Appliquer" pour revenir aux données live.', 'ok');
+}
+
+async function deleteArchive(id){
+  if(!confirm('Supprimer cette archive ?')) return;
+  state.archives = state.archives.filter(a=>a.id!==id);
+  try{ await storage.set('archives', JSON.stringify(state.archives)); }catch(e){}
+  renderHistorique();
+}
+
+/* =========================================================================
+   GRILLE TARIFAIRE TAB
+========================================================================= */
+function renderTarifs(){
+  const tbody = document.getElementById('tarif-body');
+  tbody.innerHTML='';
+  state.tarifs.forEach((t, i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="text" value="${t.site}" onchange="updateTarif(${i},'site',this.value)"></td>
+      <td><input type="text" value="${t.activite}" onchange="updateTarif(${i},'activite',this.value)"></td>
+      <td><input type="text" value="${t.type}" onchange="updateTarif(${i},'type',this.value)"></td>
+      <td><input type="text" value="${t.unite}" onchange="updateTarif(${i},'unite',this.value)"></td>
+      <td><input type="number" step="0.0001" value="${t.prixNormal}" onchange="updateTarif(${i},'prixNormal',this.value)"></td>
+      <td><input type="number" step="0.0001" value="${t.prixFerie}" onchange="updateTarif(${i},'prixFerie',this.value)"></td>
+      <td><button class="btn small danger" onclick="removeTarifRow(${i})">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+function updateTarif(i, field, val){
+  state.tarifs[i][field] = (field==='prixNormal'||field==='prixFerie') ? Number(val) : val;
+}
+function addTarifRow(){
+  state.tarifs.push({site:'', activite:'', type:'', unite:'Acte', prixNormal:0, prixFerie:0});
+  renderTarifs();
+}
+function removeTarifRow(i){
+  state.tarifs.splice(i,1);
+  renderTarifs();
+}
+function resetTarifs(){
+  state.tarifs = JSON.parse(JSON.stringify(DEFAULT_TARIFS));
+  renderTarifs();
+}
+
+/* =========================================================================
+   RÉFÉRENTIEL FLUX (modifiable, persisté — voir "Répartition des actes par flux")
+========================================================================= */
+function renderFluxMap(){
+  const tbody = document.getElementById('flux-body');
+  if(!tbody) return;
+  tbody.innerHTML='';
+  state.fluxMap.forEach((f, i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="text" value="${f.queue}" onchange="updateFlux(${i},'queue',this.value)"></td>
+      <td><input type="text" value="${f.type}" onchange="updateFlux(${i},'type',this.value)"></td>
+      <td><button class="btn small danger" onclick="removeFluxRow(${i})">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+  const c = document.getElementById('flux-count');
+  if(c) c.textContent = state.fluxMap.length+' correspondances';
+}
+function updateFlux(i, field, val){
+  state.fluxMap[i][field] = val;
+}
+function addFluxRow(){
+  state.fluxMap.push({queue:'', type:''});
+  renderFluxMap();
+}
+function removeFluxRow(i){
+  state.fluxMap.splice(i,1);
+  renderFluxMap();
+}
+function resetFluxMap(){
+  state.fluxMap = JSON.parse(JSON.stringify(DEFAULT_FLUX));
+  renderFluxMap();
+}
+async function saveFluxMap(){
+  try{
+    await storage.set('flux_map', JSON.stringify(state.fluxMap));
+    const s = document.getElementById('flux-save-status');
+    if(s){ s.textContent = '✓ Enregistré'; setTimeout(()=>s.textContent='', 2000); }
+  }catch(e){ log('Erreur sauvegarde référentiel flux : '+e.message, 'err'); }
+}
+async function saveTarifs(){
+  try{
+    await storage.set('grille_tarifaire', JSON.stringify(state.tarifs));
+    const s = document.getElementById('tarif-save-status');
+    s.textContent = '✓ Enregistré'; setTimeout(()=>s.textContent='', 2000);
+  }catch(e){ log('Erreur sauvegarde grille : '+e.message, 'err'); }
+}
+async function saveDmtFormula(){
+  state.dmtFormula = document.getElementById('dmt-formula').value;
+  try{
+    await storage.set('dmt_formula', state.dmtFormula);
+    const s = document.getElementById('dmt-formula-status');
+    s.textContent = '✓ Enregistrée'; setTimeout(()=>s.textContent='', 2000);
+  }catch(e){ log('Erreur sauvegarde formule : '+e.message, 'err'); }
+  updateDmtPreview();
+  if(state.results.length) renderDashboard();
+}
+function updateDmtPreview(){
+  const el = document.getElementById('dmt-preview');
+  if(!state.dmtFormula.trim()){
+    el.textContent = 'Aucune formule active — la grille tarifaire fixe est utilisée pour les appels sortants.';
+    return;
+  }
+  if(state.dmt.global == null){
+    el.textContent = 'Formule enregistrée : '+state.dmtFormula+' — sera appliquée dès qu\'un fichier appels sortants sera calculé.';
+    return;
+  }
+  try{
+    const fn = new Function('DMT_sec','DMT_min', 'return ('+state.dmtFormula+');');
+    const val = fn(state.dmt.global, state.dmt.global/60);
+    el.textContent = 'Formule active — Tarif sortant global calculé ≈ '+fmtEUR(val)+' (DMT globale '+fmtDuree(state.dmt.global)+')';
+  }catch(e){
+    el.textContent = '⚠ Formule invalide : '+e.message;
+  }
+}
+
+/* =========================================================================
+   EQUIPES TAB
+========================================================================= */
+function renderEquipes(){
+  const lotBody = document.getElementById('lot-body');
+  lotBody.innerHTML='';
+  state.lotUnique.forEach((a,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input type="text" value="${a.site}" onchange="updateAgent('lot',${i},'site',this.value)"></td>
+      <td><input type="text" value="${a.agent}" onchange="updateAgent('lot',${i},'agent',this.value)"></td>
+      <td><button class="btn small danger" onclick="removeAgentRow('lot',${i})">✕</button></td>`;
+    lotBody.appendChild(tr);
+  });
+  const savBody = document.getElementById('sav-body');
+  savBody.innerHTML='';
+  state.sav.forEach((a,i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input type="text" value="${a.site||'Casablanca'}" onchange="updateAgent('sav',${i},'site',this.value)"></td>
+      <td><input type="text" value="${a.agent}" onchange="updateAgent('sav',${i},'agent',this.value)"></td>
+      <td><button class="btn small danger" onclick="removeAgentRow('sav',${i})">✕</button></td>`;
+    savBody.appendChild(tr);
+  });
+  document.getElementById('lot-count').textContent = state.lotUnique.length+' agents';
+  document.getElementById('sav-count').textContent = state.sav.length+' agents';
+}
+function updateAgent(list, i, field, val){
+  (list==='lot'?state.lotUnique:state.sav)[i][field] = val;
+}
+function addAgentRow(list){
+  (list==='lot'?state.lotUnique:state.sav).push({site: list==='sav'?'Casablanca':'', agent:''});
+  renderEquipes();
+}
+function removeAgentRow(list, i){
+  (list==='lot'?state.lotUnique:state.sav).splice(i,1);
+  renderEquipes();
+}
+async function saveEquipes(){
+  try{
+    await storage.set('lot_unique', JSON.stringify(state.lotUnique));
+    await storage.set('sav_team', JSON.stringify(state.sav));
+    log('Équipes enregistrées.', 'ok');
+  }catch(e){ log('Erreur sauvegarde équipes : '+e.message, 'err'); }
+}
+
+/* =========================================================================
+   FIRESTORE — lecture/écriture bas niveau, même logique que le dashboard
+   Qualité (collection "dashboard_ca" dédiée à ce dashboard).
+========================================================================= */
+async function waitForFirebase(){
+  let tries = 0;
+  while (!window.__firebaseReady && tries < 200) {
+    await new Promise((r) => setTimeout(r, 25));
+    tries++;
+  }
+}
+
+async function fsLoad(key, fallback){
+  await waitForFirebase();
+  if (!window.__firebaseConfigured) return { value: fallback, status: "unconfigured" };
+  if (window.__firebaseError || !window.__fb) return { value: fallback, status: "error", error: window.__firebaseError };
+  try {
+    const ref = window.__fb.doc(window.__fb.db, "dashboard_ca", key);
+    const snap = await window.__fb.getDoc(ref);
+    if (snap.exists() && snap.data().payload !== undefined) return { value: snap.data().payload, status: "ok" };
+    return { value: fallback, status: "ok" };
+  } catch (e) {
+    return { value: fallback, status: "error", error: e.message };
+  }
+}
+
+async function fsSave(key, value){
+  if (!window.__firebaseConfigured || window.__firebaseError || !window.__fb) return false;
+  try {
+    const ref = window.__fb.doc(window.__fb.db, "dashboard_ca", key);
+    await window.__fb.setDoc(ref, { payload: value, updatedAt: new Date().toISOString() });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* Sauvegarde "par morceaux" pour les tableaux volumineux (l'historique grossit
+   indéfiniment au fil des chargements) — Firestore refuse tout document
+   dépassant 1 Mo, donc on découpe le tableau en documents "_chunk_N" plus
+   un document "_meta" qui indique combien de morceaux existent. */
+const FS_CHUNK_SIZE = 60;
+
+async function fsSaveChunked(key, arrayValue){
+  if (!window.__firebaseConfigured || window.__firebaseError || !window.__fb) return false;
+  try {
+    const arr = arrayValue || [];
+    const chunks = [];
+    for (let i = 0; i < arr.length; i += FS_CHUNK_SIZE) chunks.push(arr.slice(i, i + FS_CHUNK_SIZE));
+    const metaRef = window.__fb.doc(window.__fb.db, "dashboard_ca", key + "_meta");
+    let prevCount = 0;
+    try {
+      const prevSnap = await window.__fb.getDoc(metaRef);
+      if (prevSnap.exists()) prevCount = prevSnap.data().count || 0;
+    } catch (e) {}
+    await Promise.all(chunks.map((chunk, i) =>
+      window.__fb.setDoc(window.__fb.doc(window.__fb.db, "dashboard_ca", key + "_chunk_" + i), { payload: chunk })
+    ));
+    if (prevCount > chunks.length) {
+      const toDelete = [];
+      for (let i = chunks.length; i < prevCount; i++) {
+        toDelete.push(window.__fb.deleteDoc(window.__fb.doc(window.__fb.db, "dashboard_ca", key + "_chunk_" + i)));
+      }
+      await Promise.all(toDelete);
+    }
+    await window.__fb.setDoc(metaRef, { count: chunks.length, updatedAt: new Date().toISOString() });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function fsLoadChunked(key, fallback){
+  await waitForFirebase();
+  if (!window.__firebaseConfigured) return { value: fallback, status: "unconfigured" };
+  if (window.__firebaseError || !window.__fb) return { value: fallback, status: "error", error: window.__firebaseError };
+  try {
+    const metaRef = window.__fb.doc(window.__fb.db, "dashboard_ca", key + "_meta");
+    const metaSnap = await window.__fb.getDoc(metaRef);
+    if (!metaSnap.exists()) return { value: fallback, status: "ok" };
+    const count = metaSnap.data().count || 0;
+    const chunkSnaps = await Promise.all(
+      Array.from({ length: count }, (_, i) => window.__fb.getDoc(window.__fb.doc(window.__fb.db, "dashboard_ca", key + "_chunk_" + i)))
+    );
+    const merged = [];
+    chunkSnaps.forEach((s) => { if (s.exists() && s.data().payload) merged.push(...s.data().payload); });
+    return { value: merged, status: "ok" };
+  } catch (e) {
+    return { value: fallback, status: "error", error: e.message };
+  }
+}
+
+function updateDbStatusBadge(){
+  const el = document.getElementById('db-status');
+  if(!el) return;
+  if(!window.__firebaseConfigured){
+    el.textContent = 'Base de données : non configurée (stockage local uniquement)';
+  } else if(window.__firebaseError){
+    el.textContent = 'Base de données : hors ligne — repli sur stockage local (' + window.__firebaseError + ')';
+  } else {
+    el.textContent = 'Base de données : connectée ✓ (les chargements sont conservés)';
+  }
+}
+
+/* =========================================================================
+   STORAGE — API utilisée par le reste de l'appli (inchangée), maintenant
+   adossée à Firestore (collection "dashboard_ca") au lieu du localStorage
+   du navigateur, pour que les données survivent au changement de poste/
+   navigateur. window.storage [artifact Claude] reste prioritaire quand
+   disponible ; localStorage reste un dernier repli si Firestore est
+   injoignable.
+   La clé "archives" (l'historique, qui grossit à chaque chargement) est
+   stockée par morceaux (fsSaveChunked/fsLoadChunked) ; les autres clés
+   utilisent un document unique (fsSave/fsLoad).
+========================================================================= */
+const storage = {
+  async get(key){
+    if(window.storage && typeof window.storage.get === 'function'){
+      try{
+        const r = await window.storage.get(key, false);
+        if(r) return r;
+      }catch(e){ /* fallback */ }
+    }
+    try{
+      if(key === 'archives'){
+        const res = await fsLoadChunked('archives', null);
+        updateDbStatusBadge();
+        if(res.status === 'ok' && res.value && res.value.length) return { value: JSON.stringify(res.value) };
+      } else {
+        const res = await fsLoad(key, null);
+        updateDbStatusBadge();
+        if(res.status === 'ok' && res.value != null) return { value: res.value };
+      }
+    }catch(e){ /* fallback */ }
+    const v = localStorage.getItem('dashca_'+key);
+    return v!=null ? {value:v} : null;
+  },
+  async set(key, value){
+    if(window.storage && typeof window.storage.set === 'function'){
+      try{ return await window.storage.set(key, value, false); }catch(e){ /* fallback */ }
+    }
+    let firestoreOk = false;
+    try{
+      if(key === 'archives'){
+        let arr = [];
+        try{ arr = value ? JSON.parse(value) : []; }catch(e){ arr = []; }
+        firestoreOk = await fsSaveChunked('archives', arr);
+      } else {
+        firestoreOk = await fsSave(key, value);
+      }
+      updateDbStatusBadge();
+    }catch(e){ /* fallback */ }
+    // On garde aussi une copie locale : lecture instantanée au prochain
+    // chargement de page et filet de sécurité si Firestore est injoignable.
+    try{ localStorage.setItem('dashca_'+key, value); }catch(e){}
+    return {value, firestoreOk};
+  }
+};
+
+/* =========================================================================
+   TABS
+========================================================================= */
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-'+btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab === 'reporting') renderReporting();
+    if(btn.dataset.tab === 'coprod') renderCoprod();
+  });
+});
+
+/* =========================================================================
+   COPROD — rendu (Prévu / Reçu / Traité, filtre Jour/Semaine/Mois/Trimestre/Année)
+   Comportement demandé : Jour -> le jour choisi ; Semaine -> les 7 jours de la semaine
+   + un total ; Mois -> le détail par semaine du mois (semaines calendaires découpées sur
+   le mois) + un total ; Trimestre -> le détail par mois du trimestre + un total ;
+   Année -> le détail par mois de l'année + un total.
+========================================================================= */
+const COPROD_MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const COPROD_DAY_NAMES = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+function fmtDateFr(d){ return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }
+function fmtDateFrShort(d){ return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'); }
+function coprodMondayOf(d){ const dow=d.getDay(); const diff=(dow===0)?-6:(1-dow); const m=new Date(d); m.setDate(d.getDate()+diff); return m; }
+function coprodAddDays(d,n){ const r=new Date(d); r.setDate(d.getDate()+n); return r; }
+
+function onCoprodPeriodModeChange(){
+  const mode = document.getElementById('coprod-period-mode').value;
+  document.getElementById('coprod-ref-date-label').style.display = (mode==='day'||mode==='week') ? 'inline-block' : 'none';
+  document.getElementById('coprod-ref-month-label').style.display = (mode==='month') ? 'inline-block' : 'none';
+  document.getElementById('coprod-ref-quarter-label').style.display = (mode==='quarter') ? 'inline-block' : 'none';
+  document.getElementById('coprod-ref-year-label').style.display = (mode==='year') ? 'inline-block' : 'none';
+  ensureCoprodDefaults();
+  renderCoprod();
+}
+function onCoprodRefChange(){ renderCoprod(); }
+function ensureCoprodDefaults(){
+  const today = new Date();
+  const dEl = document.getElementById('coprod-ref-date');
+  if(dEl && !dEl.value) dEl.value = dateKey(today);
+  const mEl = document.getElementById('coprod-ref-month');
+  if(mEl && !mEl.value) mEl.value = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+  const qyEl = document.getElementById('coprod-ref-quarter-y');
+  if(qyEl && !qyEl.value) qyEl.value = today.getFullYear();
+  const yEl = document.getElementById('coprod-ref-year');
+  if(yEl && !yEl.value) yEl.value = today.getFullYear();
+}
+
+// Construit la liste de "colonnes" (buckets) à afficher pour le mode de période courant.
+// Chaque bucket = {label, start:'YYYY-MM-DD', end:'YYYY-MM-DD', isTotal?:true}
+function buildCoprodBuckets(){
+  const mode = document.getElementById('coprod-period-mode').value;
+  const buckets = [];
+  if(mode==='day'){
+    const refStr = document.getElementById('coprod-ref-date').value;
+    if(!refStr) return buckets;
+    const ref = new Date(refStr+'T00:00:00');
+    buckets.push({label: fmtDateFr(ref), start: dateKey(ref), end: dateKey(ref)});
+  } else if(mode==='week'){
+    const refStr = document.getElementById('coprod-ref-date').value;
+    if(!refStr) return buckets;
+    const ref = new Date(refStr+'T00:00:00');
+    const mon = coprodMondayOf(ref);
+    for(let i=0;i<7;i++){
+      const d = coprodAddDays(mon,i);
+      buckets.push({label: COPROD_DAY_NAMES[i]+' '+fmtDateFrShort(d), start: dateKey(d), end: dateKey(d)});
+    }
+    buckets.push({label:'Total semaine', start: dateKey(mon), end: dateKey(coprodAddDays(mon,6)), isTotal:true});
+  } else if(mode==='month'){
+    const refStr = document.getElementById('coprod-ref-month').value; // 'YYYY-MM'
+    if(!refStr) return buckets;
+    const [y,m] = refStr.split('-').map(Number); // m = 1-indexé
+    const monStart = new Date(y, m-1, 1), monEnd = new Date(y, m, 0);
+    let cur = coprodMondayOf(monStart);
+    while(cur <= monEnd){
+      const weekEnd = coprodAddDays(cur,6);
+      const clipStart = cur < monStart ? monStart : cur;
+      const clipEnd = weekEnd > monEnd ? monEnd : weekEnd;
+      buckets.push({label:'Sem. du '+fmtDateFrShort(cur)+' au '+fmtDateFrShort(weekEnd), start: dateKey(clipStart), end: dateKey(clipEnd)});
+      cur = coprodAddDays(cur,7);
+    }
+    buckets.push({label:'Total mois', start: dateKey(monStart), end: dateKey(monEnd), isTotal:true});
+  } else if(mode==='quarter'){
+    const q = Number(document.getElementById('coprod-ref-quarter-q').value);
+    const y = Number(document.getElementById('coprod-ref-quarter-y').value);
+    if(!y) return buckets;
+    const months = [(q-1)*3, (q-1)*3+1, (q-1)*3+2];
+    let qStart=null, qEnd=null;
+    months.forEach(m=>{
+      const s = new Date(y,m,1), e = new Date(y,m+1,0);
+      buckets.push({label: COPROD_MONTH_NAMES[m]+' '+y, start: dateKey(s), end: dateKey(e)});
+      if(qStart===null) qStart = dateKey(s);
+      qEnd = dateKey(e);
+    });
+    buckets.push({label:'Total T'+q, start: qStart, end: qEnd, isTotal:true});
+  } else if(mode==='year'){
+    const y = Number(document.getElementById('coprod-ref-year').value);
+    if(!y) return buckets;
+    for(let m=0;m<12;m++){
+      const s = new Date(y,m,1), e = new Date(y,m+1,0);
+      buckets.push({label: COPROD_MONTH_NAMES[m], start: dateKey(s), end: dateKey(e)});
+    }
+    buckets.push({label:'Total '+y, start: dateKey(new Date(y,0,1)), end: dateKey(new Date(y,11,31)), isTotal:true});
+  }
+  return buckets;
+}
+function coprodSumRange(byDate, ds, de){
+  let sum=0, any=false;
+  Object.keys(byDate).forEach(dk=>{
+    if(dk>=ds && dk<=de){ sum += byDate[dk]; any = true; }
+  });
+  return {sum, any};
+}
+function renderCoprod(){
+  ensureCoprodDefaults();
+  const empty = document.getElementById('coprod-empty');
+  const wrap = document.getElementById('coprod-wrap');
+  const hasAny = Object.keys(state.coprod.recuByDate).length || Object.keys(state.coprod.traiteByDate).length || Object.keys(state.coprod.prevuByDate).length;
+  if(!hasAny){
+    empty.style.display='block'; wrap.style.display='none';
+    document.getElementById('coprod-coverage').textContent='';
+    document.getElementById('coprod-prevu-meta').textContent='';
+    return;
+  }
+  empty.style.display='none'; wrap.style.display='block';
+
+  const buckets = buildCoprodBuckets();
+  buckets.forEach(b=>{
+    const prevu = coprodSumRange(state.coprod.prevuByDate, b.start, b.end);
+    const recu = coprodSumRange(state.coprod.recuByDate, b.start, b.end);
+    const traite = coprodSumRange(state.coprod.traiteByDate, b.start, b.end);
+    b.prevu = prevu.any ? prevu.sum : null;
+    b.recu = recu.any ? recu.sum : null;
+    b.traite = traite.any ? traite.sum : null;
+    b.qp = (b.prevu && b.prevu>0 && b.recu!=null) ? b.recu/b.prevu : null;
+    b.qs = (b.recu && b.recu>0 && b.traite!=null) ? b.traite/b.recu : null;
+    b.qs115 = (b.prevu && b.prevu>0 && b.traite!=null) ? b.traite/(1.15*b.prevu) : null;
+  });
+
+  const recuDates = Object.keys(state.coprod.recuByDate).sort();
+  const traiteDates = Object.keys(state.coprod.traiteByDate).sort();
+  const prevuDates = Object.keys(state.coprod.prevuByDate).sort();
+  let cov = 'Reçu : '+(recuDates.length? (recuDates[0]+' → '+recuDates[recuDates.length-1]+' ('+recuDates.length+' j.)') : 'aucune donnée')+
+    ' — Traité : '+(traiteDates.length? (traiteDates[0]+' → '+traiteDates[traiteDates.length-1]+' ('+traiteDates.length+' j.)') : 'aucune donnée')+
+    ' — Prévu : '+(prevuDates.length? (prevuDates[0]+' → '+prevuDates[prevuDates.length-1]+' ('+prevuDates.length+' j.)') : 'aucune donnée (QP et QS/115% resteront à "—")');
+  document.getElementById('coprod-coverage').textContent = cov;
+
+  const meta = state.coprod.prevuMeta || {};
+  document.getElementById('coprod-prevu-meta').textContent = (meta.flows && meta.flows.length)
+    ? ('Prévu calculé à partir de : '+meta.flows.join(', ')+(meta.conflicts?(' — ⚠️ '+meta.conflicts+' valeur(s) en conflit dans le fichier source ont été ignorées (voir le fichier Capacitaire)'):''))
+    : '';
+
+  const thead = document.getElementById('coprod-thead');
+  const tbody = document.getElementById('coprod-tbody');
+  thead.innerHTML = '<tr><th>KPI</th>'+buckets.map(b=>'<th'+(b.isTotal?' style="background:#eef2f7;"':'')+'>'+b.label+'</th>').join('')+'</tr>';
+
+  const rows = [
+    {label:'Prévu', fmt:v=>v==null?'—':fmtNum(Math.round(v)), key:'prevu'},
+    {label:'Reçu', fmt:v=>v==null?'—':fmtNum(v), key:'recu'},
+    {label:'Traité', fmt:v=>v==null?'—':fmtNum(v), key:'traite'},
+    {label:'QP (Reçu ÷ Prévu)', fmt:fmtPct, key:'qp'},
+    {label:'QS (Traité ÷ Reçu)', fmt:fmtPct, key:'qs'},
+    {label:'QS / 115% de fiab.', fmt:fmtPct, key:'qs115'}
+  ];
+  tbody.innerHTML = rows.map(r=>
+    '<tr><td><strong>'+r.label+'</strong></td>'+
+    buckets.map(b=>'<td'+(b.isTotal?' style="background:#f7f9fb;font-weight:600;"':'')+'>'+r.fmt(b[r.key])+'</td>').join('')+
+    '</tr>'
+  ).join('');
+}
+
+/* =========================================================================
+   PERSISTENCE / INIT
+========================================================================= */
+async function loadPersisted(){
+  try{
+    const v = await storage.get('tarifs_version');
+    const savedVersion = v ? Number(v.value) : 0;
+    if(savedVersion < TARIFS_VERSION){
+      // Nouvelle version de grille disponible dans le fichier -> on l'applique et on écrase l'ancienne
+      state.tarifs = JSON.parse(JSON.stringify(DEFAULT_TARIFS));
+      await storage.set('grille_tarifaire', JSON.stringify(state.tarifs));
+      await storage.set('tarifs_version', String(TARIFS_VERSION));
+      log('Grille tarifaire mise à jour automatiquement (nouvelle version disponible).', 'ok');
+    } else {
+      const t = await storage.get('grille_tarifaire');
+      state.tarifs = t ? JSON.parse(t.value) : JSON.parse(JSON.stringify(DEFAULT_TARIFS));
+    }
+  }catch(e){ state.tarifs = JSON.parse(JSON.stringify(DEFAULT_TARIFS)); }
+
+  try{
+    const f = await storage.get('dmt_formula');
+    state.dmtFormula = f ? f.value : '';
+  }catch(e){ state.dmtFormula = ''; }
+
+  try{
+    const v = await storage.get('equipes_version');
+    const savedVersion = v ? Number(v.value) : 0;
+    if(savedVersion < EQUIPES_VERSION){
+      // Nouvelle version de référence disponible -> on l'applique et on écrase l'ancienne
+      state.lotUnique = JSON.parse(JSON.stringify(DEFAULT_LOT_UNIQUE));
+      state.sav = JSON.parse(JSON.stringify(DEFAULT_SAV));
+      await storage.set('lot_unique', JSON.stringify(state.lotUnique));
+      await storage.set('sav_team', JSON.stringify(state.sav));
+      await storage.set('equipes_version', String(EQUIPES_VERSION));
+      log('Répartition d\'équipes initialisée depuis la référence officielle ('+state.lotUnique.length+' Lot Unique, '+state.sav.length+' SAV).', 'ok');
+    } else {
+      const l = await storage.get('lot_unique');
+      state.lotUnique = l ? JSON.parse(l.value) : JSON.parse(JSON.stringify(DEFAULT_LOT_UNIQUE));
+      const s = await storage.get('sav_team');
+      state.sav = s ? JSON.parse(s.value) : JSON.parse(JSON.stringify(DEFAULT_SAV));
+    }
+  }catch(e){
+    state.lotUnique = JSON.parse(JSON.stringify(DEFAULT_LOT_UNIQUE));
+    state.sav = JSON.parse(JSON.stringify(DEFAULT_SAV));
+  }
+
+  try{
+    const fv = await storage.get('flux_version');
+    const savedFluxVersion = fv ? Number(fv.value) : 0;
+    if(savedFluxVersion < FLUX_VERSION){
+      state.fluxMap = JSON.parse(JSON.stringify(DEFAULT_FLUX));
+      await storage.set('flux_map', JSON.stringify(state.fluxMap));
+      await storage.set('flux_version', String(FLUX_VERSION));
+    } else {
+      const fm = await storage.get('flux_map');
+      state.fluxMap = fm ? JSON.parse(fm.value) : JSON.parse(JSON.stringify(DEFAULT_FLUX));
+    }
+  }catch(e){ state.fluxMap = JSON.parse(JSON.stringify(DEFAULT_FLUX)); }
+  renderFluxMap();
+
+  try{
+    const b = await storage.get('barcelone_heures');
+    state.barceloneHeures = b ? JSON.parse(b.value) : {};
+  }catch(e){ state.barceloneHeures = {}; }
+
+  // Restaurer les derniers résultats calculés (pour éviter de ré-importer les fichiers à chaque session)
+  try{
+    const r = await storage.get('last_results');
+    const d = await storage.get('last_dmt');
+    const m = await storage.get('last_meta');
+    if(r){
+      state.results = JSON.parse(r.value);
+      if(d) state.dmt = JSON.parse(d.value);
+      if(m){
+        const meta = JSON.parse(m.value);
+        const savedDate = new Date(meta.savedAt).toLocaleString('fr-FR');
+        ['entrants','sortants','mails'].forEach(k=>{
+          if(meta.files && meta.files[k]){
+            document.getElementById('st-'+k).textContent = meta.files[k]+' (dernier calcul : '+savedDate+')';
+            document.getElementById('dz-'+k).classList.add('ok');
+          }
+        });
+        log('Données restaurées depuis le dernier calcul du '+savedDate+'.', 'ok');
+      }
+      const dates = state.results.map(x=>x.date).filter(Boolean).sort();
+      if(dates.length){
+        document.getElementById('date-start').value = dates[0];
+        document.getElementById('date-end').value = dates[dates.length-1];
+      }
+      updateDmtDisplay();
+    }
+  }catch(e){ /* pas de données précédentes, rien à faire */ }
+
+  // Restaurer les données du Reporting (Vue Agent / Vue Activité) : CA/actes par agent
+  // (calculés lors du dernier "Lancer le calcul") + RTT brut, pour que l'onglet Reporting
+  // ne soit plus vide à la réouverture du dashboard.
+  try{
+    const acs = await storage.get('agent_ca_stats_by_date');
+    state.agentCaStatsByDate = acs ? JSON.parse(acs.value) : {};
+    const rtt = await storage.get('raw_rtt');
+    state.raw.rtt = rtt ? JSON.parse(rtt.value) : [];
+    if(state.raw.rtt.length){
+      document.getElementById('dz-rtt').classList.add('ok');
+      document.getElementById('st-rtt').textContent = (state.files.rtt||'RTT')+' — '+state.raw.rtt.length+' lignes (restauré)';
+    }
+    refreshAgentReporting();
+  }catch(e){ /* pas de données de reporting précédentes, rien à faire */ }
+
+  // Restaurer les données de l'onglet Coprod (Prévu/Reçu/Traité par jour)
+  try{
+    const cr = await storage.get('coprod_recu');
+    const ct = await storage.get('coprod_traite');
+    const cp = await storage.get('coprod_prevu');
+    const cpm = await storage.get('coprod_prevu_meta');
+    state.coprod.recuByDate = cr ? JSON.parse(cr.value) : {};
+    state.coprod.traiteByDate = ct ? JSON.parse(ct.value) : {};
+    state.coprod.prevuByDate = cp ? JSON.parse(cp.value) : {};
+    state.coprod.prevuMeta = cpm ? JSON.parse(cpm.value) : {flows:[], conflicts:0, sheetsUsed:[], importedAt:null};
+    if(Object.keys(state.coprod.recuByDate).length){
+      document.getElementById('dz-mails-recus').classList.add('ok');
+      document.getElementById('st-mails-recus').textContent = (state.files.mailsRecus||'Mails reçus')+' — '+Object.keys(state.coprod.recuByDate).length+' jour(s) (restauré)';
+    }
+    if(Object.keys(state.coprod.traiteByDate).length){
+      document.getElementById('dz-mails-traite').classList.add('ok');
+      document.getElementById('st-mails-traite').textContent = (state.files.mailsTraite||'Mails traité')+' — '+Object.keys(state.coprod.traiteByDate).length+' jour(s) (restauré)';
+    }
+    if(Object.keys(state.coprod.prevuByDate).length){
+      document.getElementById('dz-prevu').classList.add('ok');
+      document.getElementById('st-prevu').textContent = (state.files.prevu||'Prévu')+' — '+Object.keys(state.coprod.prevuByDate).length+' jour(s) (restauré)';
+    }
+  }catch(e){ /* pas de données Coprod précédentes, rien à faire */ }
+
+  try{
+    const arc = await storage.get('archives');
+    state.archives = arc ? JSON.parse(arc.value) : [];
+  }catch(e){ state.archives = []; }
+  renderHistorique();
+
+  document.getElementById('dmt-formula').value = state.dmtFormula;
+  renderTarifs();
+  renderEquipes();
+  updateDmtPreview();
+  document.getElementById('ref-date-label').style.display = 'none';
+  renderDashboard();
+}
+loadPersisted();
+</script>
 </body>
 </html>
