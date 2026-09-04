@@ -246,7 +246,7 @@ if(sessionStorage.getItem('dashca_auth_user')){
     <p>Import des extractions, grille tarifaire modifiable, calcul du CA par site et par activité</p>
     <p id="logged-user" style="margin-top:6px;font-size:11px;opacity:.75;"></p>
     <p id="db-status" style="margin-top:2px;font-size:11px;opacity:.75;">Base de données : connexion…</p>
-    <p style="margin-top:2px;font-size:10px;opacity:.5;">Version du fichier : 2026-08-31-r10 (nouvel onglet Coprod : Prévu/Reçu/Traité/QP/QS/QS115)</p>
+    <p style="margin-top:2px;font-size:10px;opacity:.5;">Version du fichier : 2026-09-04-r11 (Coprod : correction du Prévu — en cas de date en conflit dans le fichier Capacitaire, la valeur la plus récente (colonne la plus à droite) l'emporte désormais)</p>
   </div>
 </header>
 
@@ -1025,7 +1025,12 @@ function parsePrevuWorkbook(wb){
           if(isNaN(num)) continue;
           if(!flowDateVal[lastFlow]) flowDateVal[lastFlow] = {};
           if(flowDateVal[lastFlow][dk] !== undefined){
-            if(flowDateVal[lastFlow][dk] !== num) conflicts++; // valeurs différentes pour le même (flux, jour) -> on garde la première, on compte le conflit
+            // valeurs différentes pour le même (flux, jour) : le fichier Capacitaire répète certaines dates
+            // (un premier passage "aperçu" à faible granularité, suivi plus loin dans la feuille d'un bloc
+            // journalier détaillé pour le même mois) -> la colonne la plus à droite (rencontrée en dernier)
+            // est la plus récente/complète et remplace la précédente ; on compte quand même le conflit.
+            if(flowDateVal[lastFlow][dk] !== num) conflicts++;
+            flowDateVal[lastFlow][dk] = num;
           } else {
             flowDateVal[lastFlow][dk] = num;
           }
