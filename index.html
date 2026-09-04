@@ -246,7 +246,7 @@ if(sessionStorage.getItem('dashca_auth_user')){
     <p>Import des extractions, grille tarifaire modifiable, calcul du CA par site et par activité</p>
     <p id="logged-user" style="margin-top:6px;font-size:11px;opacity:.75;"></p>
     <p id="db-status" style="margin-top:2px;font-size:11px;opacity:.75;">Base de données : connexion…</p>
-    <p style="margin-top:2px;font-size:10px;opacity:.5;">Version du fichier : 2026-09-04-r11 (Coprod : correction du Prévu — en cas de date en conflit dans le fichier Capacitaire, la valeur la plus récente (colonne la plus à droite) l'emporte désormais)</p>
+    <p style="margin-top:2px;font-size:10px;opacity:.5;">Version du fichier : 2026-09-04-r12 (Reporting > Vue globale par Activité : les heures Barcelone saisies manuellement sont désormais retirées du volume horaire avant le calcul du CA/H et du Prod/H)</p>
   </div>
 </header>
 
@@ -1626,6 +1626,19 @@ const BARCELONE_SITES = ['Mada','Fès','Casablanca'];
 const BARCELONE_TARIFS = {'Mada':14.25, 'Fès':30.4344, 'Casablanca':30.4344};
 function barceloneKey(date, site){ return date+'|'+site; }
 
+// Heures Barcelone saisies manuellement, sommées par site sur une plage [ds,de] donnée.
+// Réutilisé par le Dashboard (période Dashboard) et par la Vue globale par Activité du Reporting
+// (période Reporting, indépendante) pour retirer ces heures du volume horaire avant le calcul du CA/H.
+function sumBarceloneHeuresBySiteForRange(ds, de){
+  const dates = listDatesInRange(ds, de);
+  const out = {};
+  BARCELONE_SITES.forEach(site=>{
+    const h = dates.reduce((sum,d)=> sum + (state.barceloneHeures[barceloneKey(d,site)]||0), 0);
+    if(h > 0) out[site] = h;
+  });
+  return out;
+}
+
 function renderBarceloneDaysTable(){
   const ds = document.getElementById('date-start').value;
   const de = document.getElementById('date-end').value;
@@ -1961,7 +1974,8 @@ function mergeAgentStats(caStats, rttStats){
   return merged;
 }
 
-function groupByActivite(merged){
+function groupByActivite(merged, barceloneBySite){
+  barceloneBySite = barceloneBySite || {};
   const groups = {};
   merged.forEach(m=>{
     const key = (m.site||'Non identifié')+'|'+(m.activite||'—');
@@ -1980,12 +1994,18 @@ function groupByActivite(merged){
   });
   const out = Object.values(groups).map(g=>{
     const heuresLog = g.heuresLogSec/3600;
+    // Heures Barcelone (saisie manuelle, par site) retirées du volume horaire utilisé pour le CA/H et le Prod/H :
+    // ces heures ne correspondent à aucun agent/activité de la répartition (elles sont saisies globalement par
+    // site sur le Dashboard), donc on retire le total du site de CHAQUE ligne Activité de ce site (ex: Casablanca
+    // LOT UNIQUE et SAV en retirent chacune la totalité — pas de répartition au prorata).
+    const heuresBarceloneSite = barceloneBySite[g.site] || 0;
+    const heuresLogPourRatio = Math.max(0, heuresLog - heuresBarceloneSite);
     return {
       site:g.site, activite:g.activite, nbAgents:g.nbAgents,
       entrants:g.entrants, sortants:g.sortants, mails:g.mails, actes:g.actes, ca:g.ca,
       heuresLog: g.heuresLogSec>0 ? heuresLog : null,
-      caParHeure: heuresLog>0 ? g.ca/heuresLog : null,
-      prodParHeure: heuresLog>0 ? g.actes/heuresLog : null,
+      caParHeure: heuresLogPourRatio>0 ? g.ca/heuresLogPourRatio : null,
+      prodParHeure: heuresLogPourRatio>0 ? g.actes/heuresLogPourRatio : null,
       meaMoy: g.entrantsTot>0 ? g.meaSumTot/g.entrantsTot : null,
       acwMoy: g.actesAcwTot>0 ? g.acwSumTot/g.actesAcwTot : null,
       tauxDispo: g.heuresLogSec>0 ? g.dispoSec/g.heuresLogSec : null,
@@ -2150,8 +2170,8 @@ function renderReporting(){
     {label:'Site',key:'site'},{label:'Activité',key:'activite'},{label:'Nb agents',key:'nbAgents'},
     {label:'Actes traités',key:'actes'},{label:'Appels entrants',key:'entrants'},{label:'Appels sortants',key:'sortants'},
     {label:'Mails traités',key:'mails'},{label:'MEA moy.',key:'meaMoy'},{label:'ACW moy.',key:'acwMoy'},
-    {label:'CA (€)',key:'ca'},{label:'Heures de log',key:'heuresLog'},{label:'CA/H (€)',key:'caParHeure'},
-    {label:'Prod/H',key:'prodParHeure'},{label:'Temps de dispo',key:'tauxDispo'},{label:'Taux de retrait',key:'tauxRetrait'},
+    {label:'CA (€)',key:'ca'},{label:'Heures de log',key:'heuresLog'},{label:'CA/H (€) (hors Barcelone)',key:'caParHeure'},
+    {label:'Prod/H (hors Barcelone)',key:'prodParHeure'},{label:'Temps de dispo',key:'tauxDispo'},{label:'Taux de retrait',key:'tauxRetrait'},
     {label:'Taux panier',key:'tauxPanier'},{label:'Taux Pause',key:'tauxPause'},{label:'Taux brief',key:'tauxBrief'}
   ];
 
@@ -2212,7 +2232,10 @@ function renderReporting(){
   } else {
     filterBar.style.display = 'none';
     countLabel.textContent = '';
-    let groups = groupByActivite(lastReportingMerged);
+    const repDs = document.getElementById('reporting-date-start').value;
+    const repDe = document.getElementById('reporting-date-end').value;
+    const barceloneBySite = sumBarceloneHeuresBySiteForRange(repDs, repDe);
+    let groups = groupByActivite(lastReportingMerged, barceloneBySite);
     groups = sortReportingRows(groups, reportingSortKey, reportingSortDir);
     thead.innerHTML = theadHtml(colsActivite);
     groups.forEach(g=>{
